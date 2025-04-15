@@ -222,47 +222,51 @@ export class AGVGridManager {
         const depth = this.dimensions.depth;
         const floorDimensions = this.floorManager.getDimensions();
         
-        // 좌측 상단 원점 화살표 (기존 코드 유지)
-        // X 방향 화살표 (바닥면 기준으로부터 거리) - 바닥면 위에 표시
+        // 화살표 높이 - 바닥면(y=0)보다 위, AGV 그리드 노드(y=0.03)보다 아래
+        const arrowHeight = 0.02; 
+        
+        // 좌측 상단 원점 화살표
+        // X 방향 화살표 (바닥면 기준으로부터 거리)
         this.createArrow(
-            new THREE.Vector3(originX, 0.15, 0),
-            new THREE.Vector3(originX, 0.15, originY),
+            new THREE.Vector3(originX, arrowHeight, 0),
+            new THREE.Vector3(originX, arrowHeight, originY),
             `${originY.toFixed(1)}m`,
             0xFF0000,
             true
         );
         
-        // Z 방향 화살표 (바닥면 기준으로부터 거리) - 바닥면 위에 표시
+        // Z 방향 화살표 (바닥면 기준으로부터 거리)
         this.createArrow(
-            new THREE.Vector3(0, 0.15, originY),
-            new THREE.Vector3(originX, 0.15, originY),
+            new THREE.Vector3(0, arrowHeight, originY),
+            new THREE.Vector3(originX, arrowHeight, originY),
             `${originX.toFixed(1)}m`,
             0xFF0000
         );
         
-        // 우측 상단 화살표 (신규)
+        // 우측 상단 화살표
         // X 방향 화살표 (바닥 우측에서 AGV 그리드 우측까지 거리)
         this.createArrow(
-            new THREE.Vector3(originX + width, 0.15, 0),
-            new THREE.Vector3(originX + width, 0.15, originY),
+            new THREE.Vector3(originX + width, arrowHeight, 0),
+            new THREE.Vector3(originX + width, arrowHeight, originY),
             `${originY.toFixed(1)}m`,
             0xFF0000,
-            true
+            true,
+            'right'
         );
         
         // Z 방향 화살표 (바닥 우측에서 AGV 그리드 우측까지 거리)
         this.createArrow(
-            new THREE.Vector3(floorDimensions.width, 0.15, originY),
-            new THREE.Vector3(originX + width, 0.15, originY),
+            new THREE.Vector3(floorDimensions.width, arrowHeight, originY),
+            new THREE.Vector3(originX + width, arrowHeight, originY),
             `${(floorDimensions.width - (originX + width)).toFixed(1)}m`,
             0xFF0000
         );
         
-        // 좌측 하단 화살표 (신규)
+        // 좌측 하단 화살표
         // X 방향 화살표 (바닥 하단에서 AGV 그리드 하단까지 거리)
         this.createArrow(
-            new THREE.Vector3(originX, 0.15, floorDimensions.depth),
-            new THREE.Vector3(originX, 0.15, originY + depth),
+            new THREE.Vector3(originX, arrowHeight, floorDimensions.depth),
+            new THREE.Vector3(originX, arrowHeight, originY + depth),
             `${(floorDimensions.depth - (originY + depth)).toFixed(1)}m`,
             0xFF0000,
             true
@@ -270,66 +274,78 @@ export class AGVGridManager {
         
         // Z 방향 화살표 (바닥 좌측에서 AGV 그리드 좌측까지 거리)
         this.createArrow(
-            new THREE.Vector3(0, 0.15, originY + depth),
-            new THREE.Vector3(originX, 0.15, originY + depth),
+            new THREE.Vector3(0, arrowHeight, originY + depth),
+            new THREE.Vector3(originX, arrowHeight, originY + depth),
             `${originX.toFixed(1)}m`,
-            0xFF0000
+            0xFF0000,
+            false,
+            'bottom'
         );
         
-        // 우측 하단 화살표 (신규)
+        // 우측 하단 화살표
         // X 방향 화살표 (바닥 우측 하단에서 AGV 그리드 우측 하단까지 거리)
         this.createArrow(
-            new THREE.Vector3(originX + width, 0.15, floorDimensions.depth),
-            new THREE.Vector3(originX + width, 0.15, originY + depth),
+            new THREE.Vector3(originX + width, arrowHeight, floorDimensions.depth),
+            new THREE.Vector3(originX + width, arrowHeight, originY + depth),
             `${(floorDimensions.depth - (originY + depth)).toFixed(1)}m`,
             0xFF0000,
-            true
+            true,
+            'right'
         );
         
         // Z 방향 화살표 (바닥 우측 하단에서 AGV 그리드 우측 하단까지 거리)
         this.createArrow(
-            new THREE.Vector3(floorDimensions.width, 0.15, originY + depth),
-            new THREE.Vector3(originX + width, 0.15, originY + depth),
+            new THREE.Vector3(floorDimensions.width, arrowHeight, originY + depth),
+            new THREE.Vector3(originX + width, arrowHeight, originY + depth),
             `${(floorDimensions.width - (originX + width)).toFixed(1)}m`,
-            0xFF0000
+            0xFF0000,
+            false,
+            'bottom'
         );
         
-        // 그리드 가로 길이 화살표 - 그리드 상단에 표시 (기존 코드)
+        // 약간 더 높은 위치에 그리드 치수 화살표 배치
+        const gridArrowHeight = 0.025;
+        
+        // 그리드 가로 길이 화살표 - 그리드 상단에 표시
         this.createArrow(
-            new THREE.Vector3(originX, 0.17, originY - 0.5),
-            new THREE.Vector3(originX + width, 0.17, originY - 0.5),
+            new THREE.Vector3(originX, gridArrowHeight, originY - 0.5),
+            new THREE.Vector3(originX + width, gridArrowHeight, originY - 0.5),
             `${width.toFixed(1)}m`,
             0xFFAA00
         );
         
-        // 그리드 세로 길이 화살표 - 그리드 왼쪽에 표시 (기존 코드)
+        // 그리드 세로 길이 화살표 - 그리드 왼쪽에 표시
         this.createArrow(
-            new THREE.Vector3(originX - 0.5, 0.17, originY),
-            new THREE.Vector3(originX - 0.5, 0.17, originY + depth),
+            new THREE.Vector3(originX - 0.5, gridArrowHeight, originY),
+            new THREE.Vector3(originX - 0.5, gridArrowHeight, originY + depth),
             `${depth.toFixed(1)}m`,
             0xFFAA00,
             true
         );
         
-        // 그리드 가로 길이 화살표 - 그리드 하단에 표시 (신규)
+        // 그리드 가로 길이 화살표 - 그리드 하단에 표시
         this.createArrow(
-            new THREE.Vector3(originX, 0.17, originY + depth + 0.5),
-            new THREE.Vector3(originX + width, 0.17, originY + depth + 0.5),
+            new THREE.Vector3(originX, gridArrowHeight, originY + depth + 0.5),
+            new THREE.Vector3(originX + width, gridArrowHeight, originY + depth + 0.5),
             `${width.toFixed(1)}m`,
-            0xFFAA00
+            0xFFAA00,
+            false,
+            'bottom'
         );
         
-        // 그리드 세로 길이 화살표 - 그리드 오른쪽에 표시 (신규)
+        // 그리드 세로 길이 화살표 - 그리드 오른쪽에 표시
         this.createArrow(
-            new THREE.Vector3(originX + width + 0.5, 0.17, originY),
-            new THREE.Vector3(originX + width + 0.5, 0.17, originY + depth),
+            new THREE.Vector3(originX + width + 0.5, gridArrowHeight, originY),
+            new THREE.Vector3(originX + width + 0.5, gridArrowHeight, originY + depth),
             `${depth.toFixed(1)}m`,
             0xFFAA00,
-            true
+            true,
+            'right'
         );
-    }    
+    }
+    
     // 화살표 생성 헬퍼 함수
-    createArrow(start, end, label, color, isVertical = false) {
+    createArrow(start, end, label, color, isVertical = false, labelPosition = '') {
         // 화살표 방향 계산
         const direction = new THREE.Vector3().subVectors(end, start).normalize();
         const length = start.distanceTo(end);
@@ -358,7 +374,7 @@ export class AGVGridManager {
         canvas.height = 128;
         
         // 배경 그리기
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         // 테두리 그리기
@@ -386,12 +402,24 @@ export class AGVGridManager {
         const midPoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
         sprite.position.copy(midPoint);
         
-        // 수직 또는 수평 화살표에 따라 스프라이트 위치 조정
-        if (isVertical) {
-            sprite.position.x -= 0.75; // 왼쪽으로 이동
+        // 라벨 위치 지정에 따라 스프라이트 위치 조정
+        if (labelPosition === 'right') {
+            // 화살표 오른쪽에 라벨 배치
+            sprite.position.x += 0.75;
+        } else if (labelPosition === 'bottom') {
+            // 화살표 아래쪽에 라벨 배치
+            sprite.position.z += 0.75;
+        } else if (isVertical) {
+            // 기본 수직 화살표일 경우 - 화살표 왼쪽에 라벨 배치
+            sprite.position.x -= 0.75;
         } else {
-            sprite.position.z -= 0.75; // 위쪽으로 이동
+            // 기본 수평 화살표일 경우 - 화살표 위쪽에 라벨 배치
+            sprite.position.z -= 0.75;
         }
+        
+        // 라벨 높이 설정 - 화살표보다 약간 더 높게 배치하여 클릭 가능성 감소
+        // 화살표는 y=0.02 ~ 0.025에 있으므로 라벨은 그보다 높게 설정
+        sprite.position.y = 0.04; 
         
         // 툴팁 속성 추가
         sprite.userData = {
@@ -402,7 +430,7 @@ export class AGVGridManager {
         // 장면에 추가
         this.sceneManager.addToGroup(this.groupName, sprite);
     }
-    
+        
     // 클릭한 노드의 좌표 가져오기
     getNodeAtPoint(intersection) {
         if (!intersection || !intersection.object || !intersection.object.userData || 
