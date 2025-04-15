@@ -4,6 +4,8 @@ import { SceneManager } from './SceneManager.js';
 import { FloorManager } from './FloorManager.js';
 import { AGVGridManager } from './AGVGridManager.js';
 import { UIManager } from './UIManager.js';
+import { ModelManager } from './ModelManager.js';
+import { ModelUIManager } from './ModelUIManager.js';
 
 class App {
     constructor() {
@@ -49,7 +51,7 @@ class App {
 
         // 2D 카메라 컨트롤 설정 - 패닝만 가능하도록
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableRotate = false; // 회전 비활성화
+        this.controls.enableRotate = true; // 회전 활성화 (3D 모델 확인을 위해 변경)
         this.controls.enableZoom = true;    // 줌은 활성화
         this.controls.screenSpacePanning = true; // 스크린 공간 패닝 활성화
         this.controls.enableDamping = true;
@@ -92,6 +94,12 @@ class App {
             this.camera,
             this.scene
         );
+        
+        // Initialize model manager
+        this.modelManager = new ModelManager(this.sceneManager);
+        
+        // Initialize model UI manager
+        this.modelUIManager = new ModelUIManager(this.modelManager);
 
         // Create initial floor
         this.floorManager.createFloor();
@@ -139,6 +147,109 @@ class App {
         
         // Listen for mouse move to update coordinate display
         document.addEventListener('mousemove', (event) => this.onMouseMove(event), false);
+        
+        // 3D 모델 관점 버튼
+        const view3DButton = document.getElementById('view-3d-mode');
+        if (view3DButton) {
+            view3DButton.addEventListener('click', () => this.toggle3DView());
+        }
+        
+        // 2D 도면 관점 버튼
+        const view2DButton = document.getElementById('view-2d-mode');
+        if (view2DButton) {
+            view2DButton.addEventListener('click', () => this.toggle2DView());
+        }
+    }
+    
+    // 3D 관점으로 전환
+    toggle3DView() {
+        // 카메라 타입 확인
+        if (this.camera instanceof THREE.OrthographicCamera) {
+            // 직교 카메라에서 원근 카메라로 변경
+            const floorDimensions = this.floorManager.getDimensions();
+            const aspect = window.innerWidth / window.innerHeight;
+            
+            // 원근 카메라 생성
+            this.camera = new THREE.PerspectiveCamera(
+                60, // FOV
+                aspect,
+                0.1,
+                1000
+            );
+            
+            // 카메라 위치 설정 - 비스듬히 내려다보는 시점
+            this.camera.position.set(
+                floorDimensions.width / 2 - 10, // 바닥 가로 중앙에서 약간 옆으로
+                15, // 높이
+                floorDimensions.depth / 2 + 10 // 바닥 세로 중앙에서 약간 뒤로
+            );
+            
+            // 카메라가 바닥 중앙을 바라보도록 설정
+            this.camera.lookAt(
+                floorDimensions.width / 2,
+                0,
+                floorDimensions.depth / 2
+            );
+            
+            // 컨트롤 업데이트
+            this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+            this.controls.target.set(floorDimensions.width / 2, 0, floorDimensions.depth / 2);
+            this.controls.enableRotate = true; // 회전 활성화
+            this.controls.enableZoom = true;
+            this.controls.enablePan = true;
+            this.controls.enableDamping = true;
+            this.controls.dampingFactor = 0.25;
+            
+            // 최소 높이 제한 (바닥 아래로 내려가지 않도록)
+            this.controls.minPolarAngle = 0; // 맨 위에서 볼 수 있음
+            this.controls.maxPolarAngle = Math.PI / 2 - 0.1; // 약간 위에서 보도록 제한
+            
+            // UI 메시지 표시
+            this.uiManager.showMessage('3D 관점으로 전환되었습니다');
+        }
+    }
+    
+    // 2D 관점으로 전환
+    toggle2DView() {
+        // 카메라 타입 확인
+        if (this.camera instanceof THREE.PerspectiveCamera) {
+            // 원근 카메라에서 직교 카메라로 변경
+            const floorDimensions = this.floorManager.getDimensions();
+            const aspect = window.innerWidth / window.innerHeight;
+            const frustumSize = Math.max(floorDimensions.width, floorDimensions.depth) * 1.2;
+            
+            // 직교 카메라 생성
+            this.camera = new THREE.OrthographicCamera(
+                frustumSize * aspect / -2, // left
+                frustumSize * aspect / 2,  // right
+                frustumSize / 2,           // top
+                frustumSize / -2,          // bottom
+                0.1,                        // near
+                1000                        // far
+            );
+            
+            // 카메라 위치 설정 - 수직으로 내려다보는 시점
+            this.camera.position.set(
+                floorDimensions.width / 2,
+                20,
+                floorDimensions.depth / 2
+            );
+            
+            this.camera.lookAt(floorDimensions.width / 2, 0, floorDimensions.depth / 2);
+            this.camera.up.set(0, 0, -1); // z축이 위쪽 방향이 아니라 아래쪽 방향으로 설정
+            
+            // 컨트롤 업데이트
+            this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+            this.controls.target.set(floorDimensions.width / 2, 0, floorDimensions.depth / 2);
+            this.controls.enableRotate = false; // 회전 비활성화
+            this.controls.enableZoom = true;
+            this.controls.screenSpacePanning = true;
+            this.controls.enableDamping = true;
+            this.controls.dampingFactor = 0.25;
+            
+            // UI 메시지 표시
+            this.uiManager.showMessage('2D 도면 관점으로 전환되었습니다');
+        }
     }
 
     onClick(event) {
@@ -164,16 +275,23 @@ class App {
 
     onWindowResize() {
         const aspect = window.innerWidth / window.innerHeight;
-        // 직교 카메라 리사이징 처리
-        const frustumSize = Math.max(
-            this.floorManager.getDimensions().width, 
-            this.floorManager.getDimensions().depth
-        ) * 1.2;
         
-        this.camera.left = frustumSize * aspect / -2;
-        this.camera.right = frustumSize * aspect / 2;
-        this.camera.top = frustumSize / 2;
-        this.camera.bottom = frustumSize / -2;
+        // 카메라 타입에 따라 처리
+        if (this.camera instanceof THREE.OrthographicCamera) {
+            // 직교 카메라 리사이징 처리
+            const frustumSize = Math.max(
+                this.floorManager.getDimensions().width, 
+                this.floorManager.getDimensions().depth
+            ) * 1.2;
+            
+            this.camera.left = frustumSize * aspect / -2;
+            this.camera.right = frustumSize * aspect / 2;
+            this.camera.top = frustumSize / 2;
+            this.camera.bottom = frustumSize / -2;
+        } else if (this.camera instanceof THREE.PerspectiveCamera) {
+            // 원근 카메라 리사이징 처리
+            this.camera.aspect = aspect;
+        }
         
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -181,7 +299,16 @@ class App {
 
     animate() {
         requestAnimationFrame(() => this.animate());
-        this.controls.update(); // Required if controls.enableDamping = true
+        
+        // 컨트롤 업데이트
+        this.controls.update();
+        
+        // 애니메이션 업데이트
+        if (this.modelManager) {
+            this.modelManager.update();
+        }
+        
+        // 렌더링
         this.renderer.render(this.scene, this.camera);
     }
 }

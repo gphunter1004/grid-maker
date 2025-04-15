@@ -246,8 +246,88 @@
             </div>
             <button id="agv-update">AGV 그리드 업데이트</button>
         </div>
-    </div>
-    
+
+        <!-- 모델 관리 패널 HTML 코드 - public/index.html 내부에 추가해야 할 코드 -->
+
+        <div class="panel">
+            <div class="panel-title">3D 모델 관리</div>
+            <div class="form-group">
+                <label for="model-file">GLB 파일 선택</label>
+                <input type="file" id="model-file" accept=".glb">
+            </div>
+            <div class="form-group">
+                <label for="model-id">모델 ID</label>
+                <input type="text" id="model-id" placeholder="모델 식별자 입력">
+            </div>
+            <div class="form-group">
+                <label>모델 위치 (m)</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="number" id="model-pos-x" placeholder="X" step="0.1" style="width: 33%;">
+                    <input type="number" id="model-pos-y" placeholder="Y" step="0.1" style="width: 33%;">
+                    <input type="number" id="model-pos-z" placeholder="Z" step="0.1" style="width: 33%;">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>모델 회전 (도)</label>
+                <div style="display: flex; gap: 5px;">
+                    <input type="number" id="model-rot-x" placeholder="X" step="5" style="width: 33%;">
+                    <input type="number" id="model-rot-y" placeholder="Y" step="5" style="width: 33%;">
+                    <input type="number" id="model-rot-z" placeholder="Z" step="5" style="width: 33%;">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="model-scale">모델 크기 배율</label>
+                <input type="number" id="model-scale" value="1.0" min="0.01" step="0.1">
+            </div>
+            <button id="load-model">모델 로드</button>
+            <button id="update-model-transform">모델 변환 업데이트</button>
+            <button id="remove-model">모델 제거</button>
+            <button id="remove-all-models">모든 모델 제거</button>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">애니메이션 제어</div>
+            <div class="form-group">
+                <label for="animation-model">애니메이션 모델</label>
+                <select id="animation-model">
+                    <option value="">모델 선택</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="animation-name">애니메이션</label>
+                <select id="animation-name">
+                    <option value="">애니메이션 선택</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="animation-loop" checked> 반복 재생
+                </label>
+            </div>
+            <button id="play-animation">애니메이션 재생</button>
+            <button id="stop-animation">애니메이션 중지</button>
+            <button id="stop-all-animations">모든 애니메이션 중지</button>
+        </div>
+
+        <!-- 예시 모델 관리 패널 HTML 코드 - public/index.html 내부에 추가해야 할 코드 -->
+        <div class="panel">
+            <div class="panel-title">예시 모델</div>
+            <div class="form-group">
+                <label>미리 정의된 모델:</label>
+            </div>
+            <button id="example-model-forklift">지게차 모델 로드</button>
+            <button id="example-model-agv">AGV 모델 로드</button>
+            <button id="example-model-robot">산업용 로봇 모델 로드</button>
+        </div>
+        <div class="panel">
+            <div class="panel-title">시점 전환</div>
+            <div class="form-group">
+                <label>시점 모드:</label>
+            </div>
+            <button id="view-3d-mode">3D 모델 관점</button>
+            <button id="view-2d-mode">2D 도면 관점</button>
+        </div>
+        </div>
     <div id="coordinate-info">좌표: </div>
     <div id="messages"></div>
     <div id="tooltip" style="display: none; position: absolute; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px; border-radius: 3px; font-size: 14px; pointer-events: none; z-index: 100;"></div>
