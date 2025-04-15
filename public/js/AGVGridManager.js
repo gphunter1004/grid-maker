@@ -10,8 +10,8 @@ export class AGVGridManager {
             cellHeight: 1,       // 세로 셀 크기 (m)
             widthCells: 10,      // 가로 셀 수량
             heightCells: 10,     // 세로 셀 수량
-            originX: 2,          // 원점 X 위치 (좌측변 기준, m)
-            originY: 5,          // 원점 Y 위치 (상단변 기준, m)
+            originX: 3,          // 원점 X 위치 (좌측변 기준, m)
+            originY: 3.5,        // 원점 Y 위치 (상단변 기준, m)
             gridVisible: false   // 그리드 표시 여부 (기본값 false)
         };
         
@@ -320,6 +320,12 @@ export class AGVGridManager {
         } else {
             sprite.position.z -= 0.75; // 위쪽으로 이동
         }
+        
+        // 툴팁 속성 추가
+        sprite.userData = {
+            type: 'tooltip',
+            value: label
+        };
         
         // 장면에 추가
         this.sceneManager.addToGroup(this.groupName, sprite);
