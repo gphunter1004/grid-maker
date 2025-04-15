@@ -273,64 +273,59 @@ export class FloorManager {
         // 장면에 추가
         this.sceneManager.addToGroup(this.groupName, arrowHelper);
         
-        // 라벨 텍스처 생성
+        // 스프라이트로 라벨 생성 (카메라를 향하는 평면)
         const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = 512; // 더 넓은 캔버스로 설정
-        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 128;
         
-        // 라벨 배경 그리기
-        context.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        context.fillRect(0, 0, canvas.width, canvas.height);
+        // 배경 그리기
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // 라벨 테두리 추가
-        context.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-        context.lineWidth = 2;
-        context.strokeRect(0, 0, canvas.width, canvas.height);
+        // 테두리 그리기
+        ctx.strokeStyle = '#' + color.toString(16).padStart(6, '0');
+        ctx.lineWidth = 8;
+        ctx.strokeRect(0, 0, canvas.width, canvas.height);
         
-        // 라벨 텍스트 그리기
-        context.font = 'bold 24px Arial';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillStyle = '#000000';
-        context.fillText(label, canvas.width / 2, canvas.height / 2);
+        // 텍스트 그리기
+        ctx.font = 'bold 60px Arial';
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, canvas.width/2, canvas.height/2);
         
-        // 텍스처 생성
-        const texture = new THREE.CanvasTexture(canvas);
-        texture.needsUpdate = true;
-        
-        // 라벨 지오메트리 및 머티리얼
-        const labelWidth = isVertical ? 0.4 : 2.5;
-        const labelHeight = isVertical ? 2.5 : 0.4;
-        const labelGeometry = new THREE.PlaneGeometry(labelWidth, labelHeight);
-        const labelMaterial = new THREE.MeshBasicMaterial({
-            map: texture,
-            transparent: true,
-            side: THREE.DoubleSide
+        const spriteMap = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ 
+            map: spriteMap,
+            transparent: true
         });
         
-        // 라벨 메쉬 생성
-        const labelMesh = new THREE.Mesh(labelGeometry, labelMaterial);
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.scale.set(2, 1, 1); // 스프라이트 크기 증가
         
-        // 라벨 위치 계산
+        // 위치 계산 - 화살표 중앙에서 약간 떨어진 위치
         const midPoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+        sprite.position.copy(midPoint);
         
-        // 수직 또는 수평 화살표에 따라 라벨 위치 조정
+        // 수직 또는 수평 화살표에 따라 스프라이트 위치 조정
         if (isVertical) {
-            labelMesh.position.set(midPoint.x - 0.7, midPoint.y, midPoint.z);
-            labelMesh.rotation.y = Math.PI / 2;
+            sprite.position.x -= 1.2; // 왼쪽으로 더 멀리 이동
         } else {
-            labelMesh.position.set(midPoint.x, midPoint.y, midPoint.z - 0.7);
+            sprite.position.z -= 1.2; // 위쪽으로 더 멀리 이동
         }
         
+        // 높이 조정 - 바닥보다 더 높게
+        sprite.position.y = 0.2; // 기존보다 더 높게 설정
+        
         // 툴팁 속성 추가
-        labelMesh.userData = {
+        sprite.userData = {
             type: 'tooltip',
             value: label
         };
         
         // 장면에 추가
-        this.sceneManager.addToGroup(this.groupName, labelMesh);
+        this.sceneManager.addToGroup(this.groupName, sprite);
     }
     
     // 클릭한 지점의 좌표 가져오기
