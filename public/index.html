@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>공장 물류 환경 시뮬레이터</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #gui-container {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 300px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 0 0 0 10px;
+            z-index: 100;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .panel {
+            margin-bottom: 15px;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+
+        .panel-title {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 16px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+
+        .form-group {
+            margin-bottom: 8px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 3px;
+            font-size: 14px;
+        }
+
+        input[type="number"] {
+            width: calc(100% - 8px);
+            padding: 4px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 5px;
+        }
+
+        button {
+            width: 100%;
+            padding: 8px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 5px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #coordinate-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        #messages {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 0, 0, 0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            display: none;
+            z-index: 150;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+        }
+
+        #tooltip {
+            display: none;
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 5px 8px;
+            border-radius: 3px;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 100;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #position-panel {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 12px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+            font-family: monospace;
+            min-width: 250px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            z-index: 50;
+        }
+
+        #position-panel div:first-child {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 15px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+
+        #position-panel div:not(:first-child) {
+            padding: 3px 0;
+            font-size: 14px;
+        }
+
+        /* 도면 모드 특별 스타일 */
+        .blueprint-mode #gui-container {
+            background-color: rgba(240, 248, 255, 0.95);
+        }
+
+        .blueprint-mode .panel {
+            border-color: #b8d4f5;
+            background-color: #f0f8ff;
+        }
+
+        .blueprint-mode #position-panel {
+            background-color: rgba(240, 248, 255, 0.95);
+            border-color: #b8d4f5;
+        }
+    </style>
+</head>
+<body>
+    <div id="gui-container">
+        <div class="panel">
+            <div class="panel-title">바닥면 설정</div>
+            <div class="form-group">
+                <label for="floor-scale">배율 (m/px)</label>
+                <input type="number" id="floor-scale" value="0.05" step="0.01" min="0.01">
+            </div>
+            <div class="form-group">
+                <label for="floor-width">바닥면 가로 크기 (m)</label>
+                <input type="number" id="floor-width" value="20" step="0.5" min="1">
+            </div>
+            <div class="form-group">
+                <label for="floor-depth">바닥면 세로 크기 (m)</label>
+                <input type="number" id="floor-depth" value="15" step="0.5" min="1">
+            </div>
+            <div class="form-group">
+                <label for="floor-cell-width">그리드 셀 가로 크기 (m)</label>
+                <input type="number" id="floor-cell-width" value="1" step="0.1" min="0.1">
+            </div>
+            <div class="form-group">
+                <label for="floor-cell-height">그리드 셀 세로 크기 (m)</label>
+                <input type="number" id="floor-cell-height" value="1" step="0.1" min="0.1">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="floor-grid-visible" checked> 그리드 표시
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="blueprint-mode"> 도면 모드
+                </label>
+            </div>
+            <button id="floor-update">바닥면 업데이트</button>
+        </div>
+        
+        <div class="panel">
+            <div class="panel-title">AGV 그리드 설정</div>
+            <div class="form-group">
+                <label for="agv-scale">배율 (m/px)</label>
+                <input type="number" id="agv-scale" value="0.05" step="0.01" min="0.01">
+            </div>
+            <div class="form-group">
+                <label for="agv-cell-width">그리드 셀 가로 크기 (m)</label>
+                <input type="number" id="agv-cell-width" value="1" step="0.1" min="0.1">
+            </div>
+            <div class="form-group">
+                <label for="agv-cell-height">그리드 셀 세로 크기 (m)</label>
+                <input type="number" id="agv-cell-height" value="1" step="0.1" min="0.1">
+            </div>
+            <div class="form-group">
+                <label for="agv-width-cells">가로 셀 수량</label>
+                <input type="number" id="agv-width-cells" value="10" step="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="agv-height-cells">세로 셀 수량</label>
+                <input type="number" id="agv-height-cells" value="10" step="1" min="1">
+            </div>
+            <div class="form-group">
+                <label for="agv-origin-x">원점 X 위치 (좌측변 기준, m)</label>
+                <input type="number" id="agv-origin-x" value="2" step="0.1" min="0">
+            </div>
+            <div class="form-group">
+                <label for="agv-origin-y">원점 Y 위치 (상단변 기준, m)</label>
+                <input type="number" id="agv-origin-y" value="5" step="0.1" min="0">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="agv-grid-visible"> 그리드 표시
+                </label>
+            </div>
+            <button id="agv-update">AGV 그리드 업데이트</button>
+        </div>
+    </div>
+    
+    <div id="coordinate-info">좌표: </div>
+    <div id="messages"></div>
+    <div id="tooltip" style="display: none; position: absolute; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px; border-radius: 3px; font-size: 14px; pointer-events: none; z-index: 100;"></div>
+    
+    <div id="position-panel" style="position: absolute; bottom: 10px; right: 10px; background-color: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-family: monospace; min-width: 250px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+        <div style="font-weight: bold; margin-bottom: 5px;">클릭 위치 좌표</div>
+        <div id="click-position-world">월드 좌표: - , -</div>
+        <div id="click-position-grid">그리드 좌표: - , -</div>
+        <div id="click-position-pixel">픽셀 좌표: - , -</div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module" src="./js/main.js"></script>
+</body>
+</html>
