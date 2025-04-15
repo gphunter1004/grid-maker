@@ -123,6 +123,8 @@ export class FloorManager {
         const yArrow = new THREE.Line(yArrowGeometry, yArrowMaterial);
         markerGroup.add(yArrow);
         
+        // 원점 라벨은 제거함
+        
         return markerGroup;
     }
     
