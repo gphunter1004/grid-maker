@@ -27,10 +27,11 @@ export class ModelManager {
         
         // 이동 제약 설정
         this.moveConstraints = {
-            allowCollisionMove: true, // 충돌 중에도 이동 허용
+            allowCollisionMove: false, // 기본적으로 충돌 시 이동 제한
             moveSpeed: 0.2,          // 키보드 이동 속도 (미터/이벤트)
             gridSnap: false,         // 그리드 스냅 활성화 여부
-            gridSize: 0.5            // 그리드 스냅 크기
+            gridSize: 0.5,           // 그리드 스냅 크기
+            respectInitialCollision: true // 초기 충돌 상태 존중 추가
         };
         
         // 서브 매니저 초기화
@@ -121,7 +122,9 @@ export class ModelManager {
                     currentAction: null,
                     isColliding: false,
                     size: boxSize.clone(),  // 모델 크기 저장
-                    isDraggable: true       // 드래그 가능 여부
+                    isDraggable: true,      // 드래그 가능 여부
+                    initialCollisionState: false, // 초기 충돌 상태 추가
+                    hasMovedSinceCollision: false // 충돌 이후 이동 여부 추가
                 };
                 
                 // 모든 하위 객체에 모델 ID 설정
@@ -193,6 +196,13 @@ export class ModelManager {
                 // 로딩 숨기기
                 loadingElement.style.display = 'none';
                 
+                // 충돌 감지
+                this.collisionManager.checkAllCollisions();
+                
+                // 초기 충돌 상태 저장
+                modelData.initialCollisionState = modelData.isColliding;
+                console.log(`모델 ${modelId} 로드됨. 초기 충돌 상태: ${modelData.initialCollisionState}`);
+                
                 // 콜백 호출
                 if (this.onModelLoaded) {
                     this.onModelLoaded(modelData);
@@ -200,9 +210,6 @@ export class ModelManager {
                 
                 // 새 모델 선택
                 this.selectionManager.selectModel(modelId);
-                
-                // 충돌 감지
-                this.collisionManager.checkAllCollisions();
                 
                 return modelId;
             },

@@ -10,6 +10,7 @@ export class CollisionManager {
         this.collisionOccurred = false; // 현재 충돌 상태
         this.collisionCallback = null;  // 충돌 발생 시 호출할 콜백 함수
         this.models = [];            // 관리할 모델 목록
+        this.initialCollisionPairs = new Set(); // 초기 충돌 페어 저장 (new)
     }
 
     /**
@@ -27,6 +28,55 @@ export class CollisionManager {
      */
     setModels(models) {
         this.models = models;
+        
+        // 모델 목록이 변경되면 초기 충돌 페어도 업데이트 (new)
+        this.updateInitialCollisionPairs();
+    }
+    
+    /**
+     * 초기 충돌 페어 업데이트 (new)
+     */
+    updateInitialCollisionPairs() {
+        this.initialCollisionPairs.clear();
+        
+        // 모든 모델 쌍에 대해 초기 충돌 상태 확인
+        for (let i = 0; i < this.models.length; i++) {
+            for (let j = i + 1; j < this.models.length; j++) {
+                const model1 = this.models[i];
+                const model2 = this.models[j];
+                
+                // 두 모델 모두 초기 충돌 상태라면 페어로 등록
+                if (model1.initialCollisionState && model2.initialCollisionState) {
+                    // 충돌 발생 여부 확인
+                    if (model1.boundingBox.intersectsBox(model2.boundingBox)) {
+                        const pairKey = this.getCollisionPairKey(model1.id, model2.id);
+                        this.initialCollisionPairs.add(pairKey);
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * 충돌 페어 키 생성 (new)
+     * 항상 작은 ID가 먼저 오도록 생성
+     * @param {number} id1 - 첫 번째 모델 ID
+     * @param {number} id2 - 두 번째 모델 ID
+     * @returns {string} - 충돌 페어 키
+     */
+    getCollisionPairKey(id1, id2) {
+        return id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
+    }
+    
+    /**
+     * 두 모델이 초기 충돌 상태인지 확인 (new)
+     * @param {Object} model1 - 첫 번째 모델
+     * @param {Object} model2 - 두 번째 모델
+     * @returns {boolean} - 초기 충돌 상태 여부
+     */
+    isInitialCollisionPair(model1, model2) {
+        const pairKey = this.getCollisionPairKey(model1.id, model2.id);
+        return this.initialCollisionPairs.has(pairKey);
     }
 
     /**
@@ -138,9 +188,10 @@ export class CollisionManager {
      * @param {Object} model - 이동할 모델
      * @param {THREE.Vector3} newPosition - 새 위치
      * @param {THREE.Vector3} previousPosition - 이전 위치
+     * @param {Object} constraints - 이동 제약 조건 객체
      * @returns {boolean} - 이동 가능 여부 (충돌 없음)
      */
-    checkMoveCollision(model, newPosition, previousPosition) {
+    checkMoveCollision(model, newPosition, previousPosition, constraints = {}) {
         if (!this.enabled) return true;
         
         // 이전 위치 저장
@@ -149,19 +200,85 @@ export class CollisionManager {
         // 새 위치로 이동
         model.root.position.copy(newPosition);
         
+        // 이동 전 충돌 상태 저장
+        const wasColliding = model.isColliding;
+        const previousCollidingModels = this.getCollidingModels(model);
+        
         // 바운딩 박스 업데이트 및 충돌 체크
         this.updateModelBoundingBox(model);
         const collisionDetected = this.checkAllCollisions();
         
-        // 충돌이 있고 이 모델이 충돌 중이면 이전 위치로 복원
+        // 충돌이 있고 이 모델이 충돌 중이면
         if (collisionDetected && model.isColliding) {
-            model.root.position.copy(previousPosition);
-            this.updateModelBoundingBox(model);
-            this.checkAllCollisions();
-            return false;
+            // 초기 충돌 상태 존중 여부 확인
+            const respectInitial = constraints.respectInitialCollision !== undefined ? 
+                                 constraints.respectInitialCollision : true;
+            
+            // 새로운 충돌이 발생했는지 확인
+            const currentCollidingModels = this.getCollidingModels(model);
+            const hasNewCollision = this.hasNewCollision(previousCollidingModels, currentCollidingModels, model);
+            
+            // 초기 충돌 상태와 새 충돌 여부에 따라 이동 결정
+            if (respectInitial && model.initialCollisionState && !hasNewCollision) {
+                // 초기 충돌 상태에서 새로운 충돌이 없으면 이동 허용
+                return true;
+            }
+            
+            // 이동 제약 조건에 따라 충돌 중 이동 허용 여부 결정
+            if (!constraints.allowCollisionMove) {
+                // 이전 위치로 복원
+                model.root.position.copy(previousPosition);
+                this.updateModelBoundingBox(model);
+                this.checkAllCollisions();
+                return false;
+            }
         }
         
         return true;
+    }
+    
+    /**
+     * 특정 모델과 충돌 중인 모델 목록 가져오기 (new)
+     * @param {Object} model - 대상 모델
+     * @returns {Array} - 충돌 중인 모델 ID 배열
+     */
+    getCollidingModels(model) {
+        const collidingModels = [];
+        
+        for (const otherModel of this.models) {
+            if (otherModel.id === model.id) continue; // 자기 자신 제외
+            
+            if (model.boundingBox.intersectsBox(otherModel.boundingBox)) {
+                collidingModels.push(otherModel.id);
+            }
+        }
+        
+        return collidingModels;
+    }
+    
+    /**
+     * 새로운 충돌이 발생했는지 확인 (new)
+     * @param {Array} previousCollisions - 이전 충돌 모델 ID 배열
+     * @param {Array} currentCollisions - 현재 충돌 모델 ID 배열
+     * @param {Object} model - 대상 모델
+     * @returns {boolean} - 새로운 충돌 발생 여부
+     */
+    hasNewCollision(previousCollisions, currentCollisions, model) {
+        for (const currentId of currentCollisions) {
+            // 이전에 없던 충돌이 새로 발생했는지 확인
+            if (!previousCollisions.includes(currentId)) {
+                // 새 충돌 대상 모델
+                const otherModel = this.models.find(m => m.id === currentId);
+                if (!otherModel) continue;
+                
+                // 초기 충돌 페어인지 확인
+                if (!this.isInitialCollisionPair(model, otherModel)) {
+                    return true; // 새로운 충돌 감지
+                }
+            }
+        }
+        
+        return false;
     }
 
     /**

@@ -95,22 +95,20 @@ export class ModelTransformManager {
             }
         }
         
-        // 충돌 검사 (충돌 중 이동 허용 설정에 따라)
-        if (!this.moveConstraints.allowCollisionMove) {
-            const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition);
-            if (!canMove) {
-                return false;
-            }
-        } else {
-            // 충돌 허용 모드인 경우 직접 위치 업데이트 후 충돌 상태 업데이트
-            model.root.position.copy(newPosition);
-            this.collisionManager.updateModelBoundingBox(model);
-            this.collisionManager.checkAllCollisions();
+        // 충돌 검사 : 충돌 중 이동 허용 설정과 초기 충돌 상태 고려
+        const constraints = {
+            allowCollisionMove: this.moveConstraints.allowCollisionMove,
+            respectInitialCollision: this.moveConstraints.respectInitialCollision
+        };
+        
+        const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition, constraints);
+        if (!canMove) {
+            return false;
         }
         
         return true;
     }
-    
+
     /**
      * 모델의 X, Z 위치를 동시에 업데이트
      * @param {number} modelId - 모델 ID
@@ -131,7 +129,7 @@ export class ModelTransformManager {
         newPosition.z = z;
         newPosition.y = 0; // Y축은 항상 0
 
-        // 그리드 경계 확인
+        // 그리드 경계 확인인
         if (this.gridBoundary) {
             const buffer = Math.max(model.size.x, model.size.z) / 2 * model.root.scale.x;
             
@@ -156,17 +154,15 @@ export class ModelTransformManager {
             newPosition.z = Math.round(newPosition.z / gridSize) * gridSize;
         }
 
-        // 충돌 검사 (충돌 중 이동 허용 설정에 따라)
-        if (!this.moveConstraints.allowCollisionMove) {
-            const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition);
-            if (!canMove) {
-                return false;
-            }
-        } else {
-            // 충돌 허용 모드인 경우 직접 위치 업데이트 후 충돌 상태 업데이트
-            model.root.position.copy(newPosition);
-            this.collisionManager.updateModelBoundingBox(model);
-            this.collisionManager.checkAllCollisions();
+        // 충돌 검사 : 충돌 중 이동 허용 설정과 초기 충돌 상태 고려
+        const constraints = {
+            allowCollisionMove: this.moveConstraints.allowCollisionMove,
+            respectInitialCollision: this.moveConstraints.respectInitialCollision
+        };
+        
+        const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition, constraints);
+        if (!canMove) {
+            return false;
         }
 
         return true;

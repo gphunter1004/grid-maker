@@ -131,10 +131,11 @@ class App {
         
         // 충돌 발생 시에도 선택된 객체는 이동 가능하도록 설정
         this.modelManager.setMoveConstraints({
-            allowCollisionMove: true,
-            moveSpeed: 0.2,
-            gridSnap: false,
-            gridSize: 0.5
+            allowCollisionMove: false,    // 기본적으로 충돌 시 이동 제한
+            moveSpeed: 0.2,               // 키보드 이동 속도
+            gridSnap: false,              // 그리드 스냅 활성화 여부
+            gridSize: 0.5,                // 그리드 스냅 크기
+            respectInitialCollision: true // 초기 충돌 상태 존중
         });
     }
     
@@ -225,6 +226,27 @@ class App {
             gridSnapToggle.addEventListener('change', (e) => {
                 this.modelManager.toggleGridSnap(e.target.checked);
                 this.uiManager.showMessage(`그리드 스냅: ${e.target.checked ? '활성화됨' : '비활성화됨'}`);
+            });
+        }
+
+        // 충돌 감지 토글 체크박스 이벤트 리스너 수정 (필요한 경우)
+        const collisionToggle = document.getElementById('collision-toggle');
+        if (collisionToggle) {
+            collisionToggle.addEventListener('change', (event) => {
+                this.modelManager.collisionManager.setEnabled(event.target.checked);
+                
+                // 충돌 감지 비활성화 시 이동 제약 설정도 업데이트
+                if (!event.target.checked) {
+                    this.modelManager.setMoveConstraints({
+                        allowCollisionMove: true, // 충돌 감지 비활성화 시 이동 항상 허용
+                        respectInitialCollision: false
+                    });
+                } else {
+                    this.modelManager.setMoveConstraints({
+                        allowCollisionMove: false, // 충돌 감지 활성화 시 이동 제한
+                        respectInitialCollision: true
+                    });
+                }
             });
         }
     }
