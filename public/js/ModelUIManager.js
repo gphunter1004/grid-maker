@@ -20,40 +20,11 @@ export class ModelUIManager {
         this.removeModelButton = document.getElementById('remove-model');
         this.removeAllModelsButton = document.getElementById('remove-all-models');
         
-        // 애니메이션 UI 요소
-        this.animationModelSelect = document.getElementById('animation-model');
-        this.animationNameSelect = document.getElementById('animation-name');
-        this.animationLoopCheckbox = document.getElementById('animation-loop');
-        this.playAnimationButton = document.getElementById('play-animation');
-        this.stopAnimationButton = document.getElementById('stop-animation');
-        this.stopAllAnimationsButton = document.getElementById('stop-all-animations');
+        // 모델 목록 UI 요소
+        this.modelsList = document.getElementById('models-list');
         
-        // 예시 모델 버튼
-        this.exampleForkliftButton = document.getElementById('example-model-forklift');
-        this.exampleAgvButton = document.getElementById('example-model-agv');
-        this.exampleRobotButton = document.getElementById('example-model-robot');
-        
-        // URL의 '/models/' 경로에 있다고 가정한 예시 모델 정의
-        this.exampleModels = {
-            forklift: {
-                path: '/models/forklift.glb',
-                position: { x: 5, y: 0, z: 5 },
-                rotation: { x: 0, y: 0, z: 0 },
-                scale: 1.0
-            },
-            agv: {
-                path: '/models/agv.glb',
-                position: { x: 10, y: 0, z: 5 },
-                rotation: { x: 0, y: 90, z: 0 },
-                scale: 1.0
-            },
-            robot: {
-                path: '/models/robot.glb',
-                position: { x: 15, y: 0, z: 5 },
-                rotation: { x: 0, y: 0, z: 0 },
-                scale: 1.0
-            }
-        };
+        // 충돌 감지 토글
+        this.collisionToggle = document.getElementById('collision-toggle');
         
         this.initEventListeners();
     }
@@ -69,9 +40,9 @@ export class ModelUIManager {
                     this.modelIdInput.value = filename;
                     
                     // 기본 위치 및 회전 설정
-                    this.modelPosXInput.value = 5;
+                    this.modelPosXInput.value = 0;
                     this.modelPosYInput.value = 0;
-                    this.modelPosZInput.value = 5;
+                    this.modelPosZInput.value = 0;
                     this.modelRotXInput.value = 0;
                     this.modelRotYInput.value = 0;
                     this.modelRotZInput.value = 0;
@@ -97,10 +68,10 @@ export class ModelUIManager {
         // 모델 제거 버튼
         if (this.removeModelButton) {
             this.removeModelButton.addEventListener('click', () => {
-                const modelId = this.modelIdInput.value;
-                if (modelId) {
+                const modelId = parseInt(this.modelIdInput.value);
+                if (!isNaN(modelId)) {
                     this.modelManager.removeModel(modelId);
-                    this.updateAnimationModelList();
+                    this.updateModelList();
                 } else {
                     this.showWarning('삭제할 모델 ID를 입력하세요');
                 }
@@ -110,78 +81,24 @@ export class ModelUIManager {
         // 모든 모델 제거 버튼
         if (this.removeAllModelsButton) {
             this.removeAllModelsButton.addEventListener('click', () => {
-                this.modelManager.removeAllModels();
-                this.updateAnimationModelList();
+                this.modelManager.clearAllModels();
+                this.updateModelList();
             });
         }
         
-        // 애니메이션 모델 선택 변경 시
-        if (this.animationModelSelect) {
-            this.animationModelSelect.addEventListener('change', () => {
-                this.updateAnimationList();
+        // 충돌 감지 토글
+        if (this.collisionToggle) {
+            this.collisionToggle.addEventListener('change', (event) => {
+                this.modelManager.collisionManager.setEnabled(event.target.checked);
             });
         }
         
-        // 애니메이션 재생 버튼
-        if (this.playAnimationButton) {
-            this.playAnimationButton.addEventListener('click', () => {
-                const modelId = this.animationModelSelect.value;
-                const animationName = this.animationNameSelect.value;
-                const loop = this.animationLoopCheckbox.checked;
-                
-                if (modelId && animationName) {
-                    this.modelManager.playAnimation(modelId, animationName, loop);
-                } else {
-                    this.showWarning('모델과 애니메이션을 선택하세요');
-                }
-            });
-        }
-        
-        // 애니메이션 중지 버튼
-        if (this.stopAnimationButton) {
-            this.stopAnimationButton.addEventListener('click', () => {
-                const modelId = this.animationModelSelect.value;
-                const animationName = this.animationNameSelect.value;
-                
-                if (modelId && animationName) {
-                    this.modelManager.stopAnimation(modelId, animationName);
-                } else {
-                    this.showWarning('모델과 애니메이션을 선택하세요');
-                }
-            });
-        }
-        
-        // 모든 애니메이션 중지 버튼
-        if (this.stopAllAnimationsButton) {
-            this.stopAllAnimationsButton.addEventListener('click', () => {
-                const modelId = this.animationModelSelect.value;
-                
-                if (modelId) {
-                    this.modelManager.stopAllAnimations(modelId);
-                } else {
-                    this.showWarning('모델을 선택하세요');
-                }
-            });
-        }
-        
-        // 예시 모델 버튼들
-        if (this.exampleForkliftButton) {
-            this.exampleForkliftButton.addEventListener('click', () => {
-                this.loadExampleModel('forklift');
-            });
-        }
-        
-        if (this.exampleAgvButton) {
-            this.exampleAgvButton.addEventListener('click', () => {
-                this.loadExampleModel('agv');
-            });
-        }
-        
-        if (this.exampleRobotButton) {
-            this.exampleRobotButton.addEventListener('click', () => {
-                this.loadExampleModel('robot');
-            });
-        }
+        // 모델 선택 콜백 설정
+        this.modelManager.setCallbacks(
+            (model) => this.handleModelLoaded(model),
+            (modelId) => this.handleModelSelected(modelId),
+            () => this.updateModelList()
+        );
     }
     
     loadModelFromInput() {
@@ -211,146 +128,180 @@ export class ModelUIManager {
         const scale = parseFloat(this.modelScaleInput.value) || 1.0;
         
         // 모델 로드
-        this.modelManager.loadModel(
-            modelId,
-            fileURL,
-            { x: posX, y: posY, z: posZ },
-            scale,
-            { x: rotX, y: rotY, z: rotZ }
-        ).then(() => {
-            // 애니메이션 모델 리스트 업데이트
-            this.updateAnimationModelList();
-        }).catch(error => {
-            console.error('모델 로드 오류:', error);
-        });
-    }
-    
-    loadExampleModel(modelType) {
-        if (!this.exampleModels[modelType]) {
-            this.showWarning(`지원되지 않는 모델 타입: ${modelType}`);
-            return;
-        }
-        
-        const modelInfo = this.exampleModels[modelType];
-        const modelId = `example-${modelType}`;
-        
-        // UI 폼에 값 설정
-        this.modelIdInput.value = modelId;
-        this.modelPosXInput.value = modelInfo.position.x;
-        this.modelPosYInput.value = modelInfo.position.y;
-        this.modelPosZInput.value = modelInfo.position.z;
-        this.modelRotXInput.value = modelInfo.rotation.x;
-        this.modelRotYInput.value = modelInfo.rotation.y;
-        this.modelRotZInput.value = modelInfo.rotation.z;
-        this.modelScaleInput.value = modelInfo.scale;
-        
-        // 모델 로드
-        this.modelManager.loadModel(
-            modelId,
-            modelInfo.path,
-            modelInfo.position,
-            modelInfo.scale,
-            modelInfo.rotation
-        ).then(() => {
-            // 애니메이션 모델 리스트 업데이트
-            this.updateAnimationModelList();
-        }).catch(error => {
-            console.error('예시 모델 로드 오류:', error);
-        });
+        this.modelManager.loadModel(fileURL, modelId);
     }
     
     updateModelTransform() {
-        const modelId = this.modelIdInput.value;
-        
-        if (!modelId) {
+        const modelId = parseInt(this.modelIdInput.value);
+        if (isNaN(modelId)) {
             this.showWarning('업데이트할 모델 ID를 입력하세요');
             return;
         }
         
+        const model = this.modelManager.getModel(modelId);
+        if (!model) {
+            this.showWarning(`모델 ID ${modelId}를 찾을 수 없습니다`);
+            return;
+        }
+        
         // 위치, 회전, 스케일 값 가져오기
-        const posX = parseFloat(this.modelPosXInput.value) || 0;
-        const posY = parseFloat(this.modelPosYInput.value) || 0;
-        const posZ = parseFloat(this.modelPosZInput.value) || 0;
-        const rotX = parseFloat(this.modelRotXInput.value) || 0;
-        const rotY = parseFloat(this.modelRotYInput.value) || 0;
-        const rotZ = parseFloat(this.modelRotZInput.value) || 0;
-        const scale = parseFloat(this.modelScaleInput.value) || 1.0;
+        const posX = parseFloat(this.modelPosXInput.value);
+        const posY = parseFloat(this.modelPosYInput.value);
+        const posZ = parseFloat(this.modelPosZInput.value);
+        const rotX = parseFloat(this.modelRotXInput.value);
+        const rotY = parseFloat(this.modelRotYInput.value);
+        const rotZ = parseFloat(this.modelRotZInput.value);
+        const scale = parseFloat(this.modelScaleInput.value);
         
-        // 모델 변환 업데이트
-        const success = this.modelManager.setModelPosition(modelId, posX, posY, posZ) &&
-                        this.modelManager.setModelRotation(modelId, rotX, rotY, rotZ) &&
-                        this.modelManager.setModelScale(modelId, scale);
+        // 위치 업데이트
+        if (!isNaN(posX)) {
+            this.modelManager.updateModelPosition(modelId, 'x', posX);
+        }
         
-        if (success) {
-            this.showMessage(`모델 변환 업데이트됨: ${modelId}`);
-        } else {
-            this.showWarning(`모델을 찾을 수 없음: ${modelId}`);
+        if (!isNaN(posZ)) {
+            this.modelManager.updateModelPosition(modelId, 'z', posZ);
+        }
+        
+        // Y 위치는 항상 0으로 설정 (바닥 위에 놓음)
+        this.modelManager.updateModelPosition(modelId, 'y', 0);
+        
+        // 회전 업데이트
+        if (!isNaN(rotY)) {
+            // Y축 회전만 적용 (바닥 평면에서는 Y축 회전만 의미가 있음)
+            model.root.rotation.y = THREE.MathUtils.degToRad(rotY);
+        }
+        
+        // 스케일 업데이트
+        if (!isNaN(scale) && scale > 0) {
+            this.modelManager.setModelScale(modelId, scale);
+        }
+        
+        // 바운딩 박스 업데이트
+        this.modelManager.collisionManager.updateModelBoundingBox(model);
+        
+        // 충돌 체크
+        this.modelManager.collisionManager.checkAllCollisions();
+        
+        // 선택 상자 업데이트
+        if (this.modelManager.selectedModelId === modelId && this.modelManager.selectionBox.visible) {
+            this.modelManager.selectionBox.update();
+        }
+        
+        this.showMessage(`모델 ${modelId} 변환이 업데이트되었습니다`);
+    }
+    
+    handleModelLoaded(model) {
+        this.updateModelList();
+    }
+    
+    handleModelSelected(modelId) {
+        this.updateModelSelection(modelId);
+        
+        if (modelId !== null) {
+            const model = this.modelManager.getModel(modelId);
+            if (model) {
+                // UI 필드 업데이트
+                this.modelIdInput.value = model.id;
+                this.modelPosXInput.value = model.root.position.x.toFixed(2);
+                this.modelPosYInput.value = model.root.position.y.toFixed(2);
+                this.modelPosZInput.value = model.root.position.z.toFixed(2);
+                
+                // 회전값은 라디안에서 각도로 변환
+                this.modelRotXInput.value = THREE.MathUtils.radToDeg(model.root.rotation.x).toFixed(0);
+                this.modelRotYInput.value = THREE.MathUtils.radToDeg(model.root.rotation.y).toFixed(0);
+                this.modelRotZInput.value = THREE.MathUtils.radToDeg(model.root.rotation.z).toFixed(0);
+                
+                this.modelScaleInput.value = model.root.scale.x.toFixed(2);
+            }
         }
     }
     
-    // 애니메이션 모델 리스트 업데이트
-    updateAnimationModelList() {
-        if (!this.animationModelSelect) return;
+    updateModelList() {
+        const models = this.modelManager.getAllModels();
+        const selectedModelId = this.modelManager.getSelectedModelId();
         
-        // 기존 옵션 삭제
-        while (this.animationModelSelect.firstChild) {
-            this.animationModelSelect.removeChild(this.animationModelSelect.firstChild);
+        if (!this.modelsList) return;
+        
+        this.modelsList.innerHTML = '';
+        
+        if (models.length === 0) {
+            this.modelsList.innerHTML = '<p>로드된 모델이 없습니다.</p>';
+            return;
         }
         
-        // 기본 옵션 추가
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = '모델 선택';
-        this.animationModelSelect.appendChild(defaultOption);
-        
-        // 모델 맵에서 모델 ID 가져오기
-        const modelIds = Array.from(this.modelManager.models.keys());
-        
-        // 각 모델에 대한 옵션 추가
-        modelIds.forEach(modelId => {
-            const option = document.createElement('option');
-            option.value = modelId;
-            option.textContent = modelId;
-            this.animationModelSelect.appendChild(option);
+        models.forEach(model => {
+            const modelElement = document.createElement('div');
+            modelElement.className = 'model-item';
+            
+            if (selectedModelId === model.id) {
+                modelElement.classList.add('selected');
+            }
+            
+            if (model.isColliding) {
+                modelElement.classList.add('collision');
+            }
+            
+            modelElement.setAttribute('data-model-id', model.id);
+            modelElement.addEventListener('click', () => {
+                this.modelManager.selectModel(model.id);
+            });
+            
+            // 모델 정보
+            modelElement.innerHTML = `
+                <div><strong>ID:</strong> ${model.id}</div>
+                <div><strong>이름:</strong> ${model.name}</div>
+                <div><strong>위치:</strong> X=${model.root.position.x.toFixed(2)}, 
+                                  Y=${model.root.position.y.toFixed(2)}, 
+                                  Z=${model.root.position.z.toFixed(2)}</div>
+                <div><strong>크기:</strong> ${model.root.scale.x.toFixed(2)}x</div>
+            `;
+            
+            // 모델 삭제 버튼
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = '삭제';
+            removeBtn.style.width = 'auto';
+            removeBtn.style.marginRight = '5px';
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 버블링 방지
+                this.modelManager.removeModel(model.id);
+                this.updateModelList();
+            });
+            
+            // 선택 버튼
+            const selectBtn = document.createElement('button');
+            selectBtn.textContent = '선택';
+            selectBtn.style.width = 'auto';
+            selectBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 버블링 방지
+                this.modelManager.selectModel(model.id);
+            });
+            
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.display = 'flex';
+            buttonContainer.style.marginTop = '5px';
+            buttonContainer.appendChild(removeBtn);
+            buttonContainer.appendChild(selectBtn);
+            
+            modelElement.appendChild(buttonContainer);
+            
+            this.modelsList.appendChild(modelElement);
+        });
+    }
+    
+    updateModelSelection(modelId) {
+        document.querySelectorAll('.model-item').forEach(item => {
+            item.classList.remove('selected');
         });
         
-        // 애니메이션 리스트 업데이트
-        this.updateAnimationList();
-    }
-    
-    // 애니메이션 리스트 업데이트
-    updateAnimationList() {
-        if (!this.animationNameSelect) return;
-        
-        // 기존 옵션 삭제
-        while (this.animationNameSelect.firstChild) {
-            this.animationNameSelect.removeChild(this.animationNameSelect.firstChild);
+        if (modelId !== null) {
+            const modelElement = document.querySelector(`.model-item[data-model-id="${modelId}"]`);
+            if (modelElement) {
+                modelElement.classList.add('selected');
+                modelElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
         }
-        
-        // 기본 옵션 추가
-        const defaultOption = document.createElement('option');
-        defaultOption.value = '';
-        defaultOption.textContent = '애니메이션 선택';
-        this.animationNameSelect.appendChild(defaultOption);
-        
-        // 선택된 모델 ID 가져오기
-        const modelId = this.animationModelSelect.value;
-        
-        if (!modelId) return;
-        
-        // 선택된 모델의 애니메이션 목록 가져오기
-        const animationNames = this.modelManager.getAnimationNames(modelId);
-        
-        // 각 애니메이션에 대한 옵션 추가
-        animationNames.forEach(animationName => {
-            const option = document.createElement('option');
-            option.value = animationName;
-            option.textContent = animationName;
-            this.animationNameSelect.appendChild(option);
-        });
     }
     
-    // 메시지 표시
     showMessage(message) {
         const messagesElement = document.getElementById('messages');
         if (messagesElement) {
@@ -365,7 +316,6 @@ export class ModelUIManager {
         }
     }
     
-    // 경고 메시지 표시
     showWarning(message) {
         const messagesElement = document.getElementById('messages');
         if (messagesElement) {

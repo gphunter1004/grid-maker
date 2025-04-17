@@ -2,13 +2,26 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 export class ModelManager {
-    constructor(sceneManager) {
-        this.sceneManager = sceneManager;
-        this.models = new Map(); // 모델 저장소
-        this.animations = new Map(); // 애니메이션 저장소
-        this.mixer = null; // 애니메이션 믹서
-        this.activeAnimations = new Map(); // 활성화된 애니메이션 액션 저장소
-        this.clock = new THREE.Clock(); // 애니메이션 시간 측정용 클럭
+    constructor(scene, collisionManager) {
+        this.scene = scene;
+        this.collisionManager = collisionManager;
+        this.models = [];
+        this.nextModelId = 0;
+        this.selectedModelId = null;
+        this.selectedObject = null;
+        
+        // 선택 상자
+        this.selectionBox = new THREE.BoxHelper(new THREE.Object3D(), 0xffff00);
+        this.selectionBox.visible = false;
+        this.scene.add(this.selectionBox);
+        
+        // 이벤트 리스너들을 위한 참조 저장
+        this.onModelLoaded = null;
+        this.onModelSelect = null;
+        this.onModelsChanged = null;
+        
+        // 그리드 경계 참조
+        this.gridBoundary = null;
         
         // 모델 그룹 이름
         this.groupName = 'models';
@@ -16,326 +29,554 @@ export class ModelManager {
         // 로더 초기화
         this.loader = new GLTFLoader();
     }
-    
-    // GLB 파일 로드
-    loadModel(modelId, filePath, position = { x: 0, y: 0, z: 0 }, scale = 1.0, rotation = { x: 0, y: 0, z: 0 }) {
-        return new Promise((resolve, reject) => {
-            // 로딩 상태 표시
-            this.showLoadingInfo(`모델 로딩 중: ${filePath}`);
-            
-            this.loader.load(
-                filePath,
-                (gltf) => {
-                    const model = gltf.scene;
-                    
-                    // 위치, 스케일, 회전 설정
-                    model.position.set(position.x, position.y, position.z);
-                    model.scale.set(scale, scale, scale);
-                    model.rotation.set(
-                        THREE.MathUtils.degToRad(rotation.x),
-                        THREE.MathUtils.degToRad(rotation.y),
-                        THREE.MathUtils.degToRad(rotation.z)
-                    );
-                    
-                    // 그림자 설정
-                    model.traverse((node) => {
-                        if (node.isMesh) {
-                            node.castShadow = true;
-                            node.receiveShadow = true;
-                        }
-                    });
-                    
-                    // 모델 저장
-                    this.models.set(modelId, model);
-                    
-                    // 애니메이션 처리
-                    if (gltf.animations && gltf.animations.length > 0) {
-                        // 애니메이션 믹서가 없으면 생성
-                        if (!this.mixer) {
-                            this.mixer = new THREE.AnimationMixer(model);
-                        }
-                        
-                        // 애니메이션 저장
-                        const animations = {};
-                        gltf.animations.forEach((clip) => {
-                            animations[clip.name] = clip;
-                        });
-                        
-                        this.animations.set(modelId, animations);
-                    }
-                    
-                    // 씬에 추가
-                    this.sceneManager.addToGroup(this.groupName, model);
-                    
-                    // 로딩 완료 메시지
-                    this.showMessage(`모델 로드 완료: ${modelId}`);
-                    
-                    resolve({
-                        model,
-                        animations: gltf.animations
-                    });
-                },
-                (xhr) => {
-                    // 로딩 진행 상태 표시
-                    const progress = Math.round((xhr.loaded / xhr.total) * 100);
-                    this.showLoadingInfo(`모델 로딩 중: ${progress}%`);
-                },
-                (error) => {
-                    // 오류 처리
-                    this.showWarning(`모델 로드 실패: ${error.message}`);
-                    reject(error);
-                }
-            );
-        });
+
+    // 콜백 설정
+    setCallbacks(onModelLoaded, onModelSelect, onModelsChanged) {
+        this.onModelLoaded = onModelLoaded;
+        this.onModelSelect = onModelSelect;
+        this.onModelsChanged = onModelsChanged;
     }
-    
-    // 모델 제거
-    removeModel(modelId) {
-        if (this.models.has(modelId)) {
-            const model = this.models.get(modelId);
-            
-            // 모델이 활성화된 애니메이션을 가지고 있으면 중지
-            if (this.activeAnimations.has(modelId)) {
-                const actions = this.activeAnimations.get(modelId);
-                for (const action of Object.values(actions)) {
-                    action.stop();
+
+    // 그리드 경계 설정
+    setGridBoundary(boundary) {
+        this.gridBoundary = boundary;
+    }
+
+    // 모델 로드
+    loadModel(fileURL, modelName) {
+        const modelId = this.nextModelId++;
+        const loadingElement = document.getElementById('loading');
+        loadingElement.style.display = 'block';
+        
+        this.loader.load(
+            fileURL,
+            (gltf) => {
+                // 바운딩 박스 계산
+                const boundingBox = new THREE.Box3().setFromObject(gltf.scene);
+                const boxSize = boundingBox.getSize(new THREE.Vector3());
+                const boxCenter = boundingBox.getCenter(new THREE.Vector3());
+                
+                // 바운딩 박스보다 약간 큰 투명한 선택용 메시 생성
+                const selectionGeometry = new THREE.BoxGeometry(
+                    boxSize.x * 1.05, 
+                    boxSize.y * 1.05, 
+                    boxSize.z * 1.05
+                );
+                const selectionMaterial = new THREE.MeshBasicMaterial({
+                    transparent: true,
+                    opacity: 0.1, // 약간 보이게 설정 (디버깅용)
+                    depthWrite: false
+                });
+                const selectionMesh = new THREE.Mesh(selectionGeometry, selectionMaterial);
+                
+                // 선택용 메시에 모델 ID 할당
+                selectionMesh.userData.modelId = modelId;
+                selectionMesh.userData.isSelectionProxy = true;
+                
+                // 메인 그룹 생성
+                const modelRoot = new THREE.Group();
+                modelRoot.name = `model-${modelId}`;
+                
+                // 모델 씬의 위치를 조정 (바운딩 박스 중심을 원점으로)
+                gltf.scene.position.sub(boxCenter);
+                
+                // 충돌 감지용 메시 생성 및 추가
+                const collisionMesh = this.collisionManager.createCollisionDebugMesh({ id: modelId }, boundingBox);
+                
+                // 씬과 선택용 메시, 충돌 메시를 그룹에 추가
+                modelRoot.add(gltf.scene);
+                modelRoot.add(selectionMesh);
+                modelRoot.add(collisionMesh);
+                
+                // 모델 데이터 객체 생성
+                const modelData = {
+                    id: modelId,
+                    name: modelName,
+                    root: modelRoot,
+                    selectionMesh: selectionMesh,
+                    collisionMesh: collisionMesh,
+                    boundingBox: new THREE.Box3(),
+                    originalModel: gltf.scene,
+                    animations: gltf.animations,
+                    mixer: null,
+                    currentAction: null,
+                    isColliding: false,
+                    size: boxSize.clone()  // 모델 크기 저장
+                };
+                
+                // 모든 하위 객체에 모델 ID 설정
+                gltf.scene.traverse((node) => {
+                    node.userData.modelId = modelId;
+                    node.userData.modelName = modelName;
+                    
+                    // 개별 메시 설정
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = true;
+                        
+                        // 재질 설정 개선
+                        if (node.material) {
+                            // 단일 재질인 경우
+                            this.enhanceMaterial(node.material);
+                        } else if (node.materials && Array.isArray(node.materials)) {
+                            // 다중 재질인 경우
+                            node.materials.forEach(material => this.enhanceMaterial(material));
+                        }
+                    }
+                });
+                
+                // 그룹 자체에도 모델 ID 설정
+                modelRoot.userData.modelId = modelId;
+                modelRoot.userData.modelName = modelName;
+                modelRoot.userData.isModelRoot = true;
+                
+                // 초기 위치 설정 (그리드 영역 내로 제한)
+                let initialPosition = new THREE.Vector3(
+                    (Math.random() - 0.5) * 10,
+                    0,
+                    (Math.random() - 0.5) * 10
+                );
+                
+                // 그리드 경계 내로 조정 (경계가 설정된 경우)
+                if (this.gridBoundary) {
+                    const buffer = Math.max(boxSize.x, boxSize.z) / 2;
+                    
+                    // 범위 내 위치로 조정
+                    initialPosition.x = Math.min(Math.max(initialPosition.x, this.gridBoundary.min.x + buffer), this.gridBoundary.max.x - buffer);
+                    initialPosition.z = Math.min(Math.max(initialPosition.z, this.gridBoundary.min.z + buffer), this.gridBoundary.max.z - buffer);
                 }
-                this.activeAnimations.delete(modelId);
+                
+                modelRoot.position.copy(initialPosition);
+                
+                // 초기 스케일 설정
+                modelRoot.scale.set(1, 1, 1);
+                
+                // 애니메이션 설정
+                if (gltf.animations && gltf.animations.length > 0) {
+                    modelData.mixer = new THREE.AnimationMixer(gltf.scene);
+                    modelData.currentAction = modelData.mixer.clipAction(gltf.animations[0]);
+                    modelData.currentAction.play();
+                }
+                
+                // 씬에 추가
+                this.scene.add(modelRoot);
+                
+                // 모델 목록에 추가
+                this.models.push(modelData);
+                
+                // 충돌 관리자에 모델 목록 업데이트
+                this.collisionManager.setModels(this.models);
+                
+                // 바운딩 박스 초기화
+                this.collisionManager.updateModelBoundingBox(modelData);
+                
+                // 로딩 숨기기
+                loadingElement.style.display = 'none';
+                
+                // 콜백 호출
+                if (this.onModelLoaded) {
+                    this.onModelLoaded(modelData);
+                }
+                
+                // 새 모델 선택
+                this.selectModel(modelId);
+                
+                // 충돌 감지
+                this.collisionManager.checkAllCollisions();
+                
+                return modelId;
+            },
+            (xhr) => {
+                // 로딩 진행률
+                const percentComplete = (xhr.loaded / xhr.total) * 100;
+                loadingElement.textContent = `로딩 중... ${Math.round(percentComplete)}%`;
+            },
+            (error) => {
+                console.error('모델 로드 중 오류 발생:', error);
+                loadingElement.textContent = '모델 로드 중 오류가 발생했습니다.';
+                setTimeout(() => {
+                    loadingElement.style.display = 'none';
+                }, 3000);
+            }
+        );
+        
+        return modelId;
+    }
+
+    // 모델 선택
+    selectModel(modelId) {
+        // 이전 선택 지우기
+        this.selectedObject = null;
+        this.selectedModelId = null;
+        this.selectionBox.visible = false;
+
+        // 새 모델 찾기
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) return false;
+
+        // 선택 설정
+        this.selectedObject = model.root;
+        this.selectedModelId = modelId;
+
+        // 모델을 포함하는 경계 박스 표시
+        this.selectionBox.setFromObject(model.root);
+        this.selectionBox.visible = true;
+        
+        // 콜백 호출
+        if (this.onModelSelect) {
+            this.onModelSelect(modelId);
+        }
+        
+        return true;
+    }
+
+    // 선택 해제
+    clearSelection() {
+        this.selectedObject = null;
+        this.selectedModelId = null;
+        this.selectionBox.visible = false;
+        
+        // 콜백 호출
+        if (this.onModelSelect) {
+            this.onModelSelect(null);
+        }
+    }
+
+    // 모델 위치 업데이트
+    updateModelPosition(modelId, axis, value) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) return false;
+
+        // 이전 위치 저장
+        const previousPosition = model.root.position.clone();
+
+        // 새 위치 계산
+        const newPosition = model.root.position.clone();
+        newPosition[axis] = parseFloat(value);
+        
+        // 그리드 경계 확인 (경계가 설정된 경우)
+        if (this.gridBoundary) {
+            const buffer = Math.max(model.size.x, model.size.z) / 2;
+            
+            // Y축은 항상 0으로 고정
+            if (axis === 'y') {
+                newPosition.y = 0;
+                model.root.position.y = 0;
+                return true;
             }
             
-            // 그룹에서 제거
-            this.sceneManager.getGroup(this.groupName).remove(model);
+            // 경계 초과 확인
+            if (axis === 'x') {
+                if (newPosition.x < this.gridBoundary.min.x + buffer || 
+                    newPosition.x > this.gridBoundary.max.x - buffer) {
+                    return false; // 경계 초과 시 이동 불가
+                }
+            } else if (axis === 'z') {
+                if (newPosition.z < this.gridBoundary.min.z + buffer || 
+                    newPosition.z > this.gridBoundary.max.z - buffer) {
+                    return false; // 경계 초과 시 이동 불가
+                }
+            }
+        } else {
+            // 경계가 없더라도 Y축은 항상 0으로 고정
+            if (axis === 'y') {
+                newPosition.y = 0;
+                model.root.position.y = 0;
+                return true;
+            }
+        }
+        
+        // 충돌 검사
+        const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition);
+        
+        if (!canMove) {
+            return false;
+        }
+        
+        // 선택 상자 업데이트
+        if (this.selectedModelId === modelId && this.selectionBox.visible) {
+            this.selectionBox.update();
+        }
+        
+        return true;
+    }
+
+    // 드래그 이동 처리
+    moveSelectedModel(newPosition, previousPosition) {
+        if (!this.selectedObject || this.selectedModelId === null) return false;
+        
+        const model = this.models.find(m => m.id === this.selectedModelId);
+        if (!model) return false;
+        
+        // 새 위치 적용 (Y값은 0으로 고정)
+        newPosition.y = 0;
+        
+        // 그리드 경계 확인 (경계가 설정된 경우)
+        if (this.gridBoundary) {
+            const buffer = Math.max(model.size.x, model.size.z) / 2;
             
-            // 모델 맵에서 제거
-            this.models.delete(modelId);
+            // X 경계 검사
+            if (newPosition.x < this.gridBoundary.min.x + buffer) {
+                newPosition.x = this.gridBoundary.min.x + buffer;
+            } else if (newPosition.x > this.gridBoundary.max.x - buffer) {
+                newPosition.x = this.gridBoundary.max.x - buffer;
+            }
             
-            // 애니메이션 맵에서 제거
-            this.animations.delete(modelId);
+            // Z 경계 검사
+            if (newPosition.z < this.gridBoundary.min.z + buffer) {
+                newPosition.z = this.gridBoundary.min.z + buffer;
+            } else if (newPosition.z > this.gridBoundary.max.z - buffer) {
+                newPosition.z = this.gridBoundary.max.z - buffer;
+            }
+        }
+        
+        // 충돌 검사
+        const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition);
+        
+        if (canMove) {
+            // 선택 상자 업데이트
+            if (this.selectionBox.visible) {
+                this.selectionBox.update();
+            }
             
-            this.showMessage(`모델 제거됨: ${modelId}`);
             return true;
         }
         
-        this.showWarning(`모델을 찾을 수 없음: ${modelId}`);
         return false;
     }
-    
-    // 모든 모델 제거
-    removeAllModels() {
-        const modelIds = [...this.models.keys()];
-        
-        modelIds.forEach(modelId => {
-            this.removeModel(modelId);
+
+    // 모든 모델 지우기
+    clearAllModels() {
+        this.models.forEach(model => {
+            this.scene.remove(model.root);
         });
+        this.models = [];
+        this.collisionManager.setModels(this.models);
         
-        // 그룹 비우기
-        this.sceneManager.clearGroup(this.groupName);
+        // 선택 해제
+        this.clearSelection();
         
-        // 믹서 초기화
-        this.mixer = null;
-        
-        this.showMessage('모든 모델이 제거되었습니다');
+        // 콜백 호출
+        if (this.onModelsChanged) {
+            this.onModelsChanged();
+        }
     }
-    
-    // 모델 위치 설정
-    setModelPosition(modelId, x, y, z) {
-        if (this.models.has(modelId)) {
-            const model = this.models.get(modelId);
-            model.position.set(x, y, z);
-            return true;
+
+    // 모델 제거
+    removeModel(modelId) {
+        const modelIndex = this.models.findIndex(m => m.id === modelId);
+        if (modelIndex === -1) return false;
+
+        const model = this.models[modelIndex];
+        this.scene.remove(model.root);
+
+        // 모델 배열에서 제거
+        this.models.splice(modelIndex, 1);
+
+        // 충돌 관리자에 모델 목록 업데이트
+        this.collisionManager.setModels(this.models);
+
+        // 선택된 모델 제거 시 선택 해제
+        if (this.selectedModelId === modelId) {
+            this.clearSelection();
+        }
+
+        // 콜백 호출
+        if (this.onModelsChanged) {
+            this.onModelsChanged();
+        }
+
+        // 충돌 감지 업데이트
+        this.collisionManager.checkAllCollisions();
+        
+        return true;
+    }
+
+    // 모델 회전 처리
+    rotateModel(modelId, angle) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) return false;
+
+        // 이전 회전 값 저장
+        const previousRotation = model.root.rotation.clone();
+        
+        // 새 회전 값 계산 (Y축 기준 회전)
+        const newRotation = model.root.rotation.clone();
+        newRotation.y += angle * (Math.PI / 180); // 각도를 라디안으로 변환
+        
+        // 회전 적용
+        model.root.rotation.copy(newRotation);
+        
+        // 충돌 검사 (회전 후 충돌 발생시 이전 상태로 복원)
+        this.collisionManager.updateModelBoundingBox(model);
+        const collisionDetected = this.collisionManager.checkAllCollisions();
+        
+        if (collisionDetected && model.isColliding) {
+            model.root.rotation.copy(previousRotation);
+            this.collisionManager.updateModelBoundingBox(model);
+            this.collisionManager.checkAllCollisions();
+            return false;
         }
         
-        this.showWarning(`모델을 찾을 수 없음: ${modelId}`);
-        return false;
-    }
-    
-    // 모델 회전 설정
-    setModelRotation(modelId, x, y, z) {
-        if (this.models.has(modelId)) {
-            const model = this.models.get(modelId);
-            model.rotation.set(
-                THREE.MathUtils.degToRad(x),
-                THREE.MathUtils.degToRad(y),
-                THREE.MathUtils.degToRad(z)
-            );
-            return true;
+        // 선택 상자 업데이트
+        if (this.selectedModelId === modelId && this.selectionBox.visible) {
+            this.selectionBox.update();
         }
         
-        this.showWarning(`모델을 찾을 수 없음: ${modelId}`);
-        return false;
+        return true;
     }
-    
+
     // 모델 스케일 설정
     setModelScale(modelId, scale) {
-        if (this.models.has(modelId)) {
-            const model = this.models.get(modelId);
-            model.scale.set(scale, scale, scale);
+        const model = this.models.find(m => m.id === modelId);
+        if (!model) return false;
+        
+        // 스케일 값이 유효한지 확인 (0보다 커야 함)
+        if (scale <= 0) return false;
+        
+        // 이전 스케일 저장
+        const previousScale = model.root.scale.clone();
+        
+        // 새 스케일 적용
+        model.root.scale.set(scale, scale, scale);
+        
+        // 바운딩 박스 업데이트 및 충돌 검사
+        this.collisionManager.updateModelBoundingBox(model);
+        
+        // 그리드 경계 검사 (경계가 설정된 경우)
+        if (this.gridBoundary) {
+            // 스케일이 변경되면 새로운 크기 계산
+            const newSize = model.size.clone().multiplyScalar(scale);
+            const buffer = Math.max(newSize.x, newSize.z) / 2;
+            
+            // 현재 위치가 새 크기로 그리드 경계를 벗어나는지 확인
+            const position = model.root.position;
+            if (position.x - buffer < this.gridBoundary.min.x || 
+                position.x + buffer > this.gridBoundary.max.x ||
+                position.z - buffer < this.gridBoundary.min.z ||
+                position.z + buffer > this.gridBoundary.max.z) {
+                
+                // 이전 스케일로 복원
+                model.root.scale.copy(previousScale);
+                this.collisionManager.updateModelBoundingBox(model);
+                return false;
+            }
+        }
+        
+        const collisionDetected = this.collisionManager.checkAllCollisions();
+        
+        // 충돌이 있고 이 모델이 충돌 중이면 이전 스케일로 복원
+        if (collisionDetected && model.isColliding) {
+            model.root.scale.copy(previousScale);
+            this.collisionManager.updateModelBoundingBox(model);
+            this.collisionManager.checkAllCollisions();
+            return false;
+        }
+        
+        // 선택 상자 업데이트
+        if (this.selectedModelId === modelId && this.selectionBox.visible) {
+            this.selectionBox.update();
+        }
+        
+        return true;
+    }
+
+    // 애니메이션 재생
+    playAnimation(modelId, animIndex) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model || !model.mixer || !model.animations || model.animations.length === 0) return false;
+
+        // 이전 애니메이션 정지
+        if (model.currentAction) {
+            model.currentAction.stop();
+        }
+
+        // 새 애니메이션 설정 및 재생
+        const animation = model.animations[animIndex];
+        if (animation) {
+            model.currentAction = model.mixer.clipAction(animation);
+            model.currentAction.reset();
+            model.currentAction.play();
             return true;
         }
         
-        this.showWarning(`모델을 찾을 수 없음: ${modelId}`);
         return false;
     }
-    
-    // 애니메이션 시작
-    playAnimation(modelId, animationName, loop = true) {
-        if (!this.models.has(modelId)) {
-            this.showWarning(`모델을 찾을 수 없음: ${modelId}`);
-            return false;
-        }
-        
-        if (!this.animations.has(modelId)) {
-            this.showWarning(`애니메이션을 찾을 수 없음: ${modelId}`);
-            return false;
-        }
-        
-        const animations = this.animations.get(modelId);
-        
-        if (!animations[animationName]) {
-            this.showWarning(`애니메이션을 찾을 수 없음: ${animationName}`);
-            return false;
-        }
-        
-        // 믹서가 없으면 생성
-        if (!this.mixer) {
-            this.mixer = new THREE.AnimationMixer(this.models.get(modelId));
-        }
-        
-        // 액션 생성
-        const action = this.mixer.clipAction(animations[animationName]);
-        
-        // 액션 설정
-        if (loop) {
-            action.loop = THREE.LoopRepeat;
+
+    // 애니메이션 토글
+    toggleAnimation(modelId, play) {
+        const model = this.models.find(m => m.id === modelId);
+        if (!model || !model.currentAction) return false;
+
+        if (play) {
+            model.currentAction.paused = false;
+            model.currentAction.play();
         } else {
-            action.loop = THREE.LoopOnce;
-            action.clampWhenFinished = true;
+            model.currentAction.paused = true;
         }
         
-        // 액션 저장
-        if (!this.activeAnimations.has(modelId)) {
-            this.activeAnimations.set(modelId, {});
-        }
-        
-        const modelAnimations = this.activeAnimations.get(modelId);
-        
-        // 이미 실행 중인 애니메이션이 있으면 정지
-        if (modelAnimations[animationName]) {
-            modelAnimations[animationName].stop();
-        }
-        
-        // 새 액션 저장
-        modelAnimations[animationName] = action;
-        
-        // 액션 시작
-        action.play();
-        
-        this.showMessage(`애니메이션 시작: ${modelId} - ${animationName}`);
         return true;
     }
-    
-    // 애니메이션 정지
-    stopAnimation(modelId, animationName) {
-        if (!this.activeAnimations.has(modelId)) {
-            this.showWarning(`활성화된 애니메이션이 없음: ${modelId}`);
-            return false;
-        }
-        
-        const modelAnimations = this.activeAnimations.get(modelId);
-        
-        if (!modelAnimations[animationName]) {
-            this.showWarning(`활성화된 애니메이션이 없음: ${animationName}`);
-            return false;
-        }
-        
-        // 액션 정지
-        modelAnimations[animationName].stop();
-        delete modelAnimations[animationName];
-        
-        this.showMessage(`애니메이션 정지: ${modelId} - ${animationName}`);
-        return true;
-    }
-    
-    // 모델의 모든 애니메이션 정지
-    stopAllAnimations(modelId) {
-        if (!this.activeAnimations.has(modelId)) {
-            this.showWarning(`활성화된 애니메이션이 없음: ${modelId}`);
-            return false;
-        }
-        
-        const modelAnimations = this.activeAnimations.get(modelId);
-        
-        // 모든 액션 정지
-        for (const action of Object.values(modelAnimations)) {
-            action.stop();
-        }
-        
-        // 액션 맵 비우기
-        this.activeAnimations.delete(modelId);
-        
-        this.showMessage(`모든 애니메이션 정지: ${modelId}`);
-        return true;
-    }
-    
+
     // 모델 가져오기
     getModel(modelId) {
-        return this.models.get(modelId);
+        return this.models.find(m => m.id === modelId);
+    }
+
+    // 모든 모델 가져오기
+    getAllModels() {
+        return this.models;
     }
     
-    // 애니메이션 목록 가져오기
-    getAnimationNames(modelId) {
-        if (!this.animations.has(modelId)) {
-            return [];
+    // 선택된 모델 ID 가져오기
+    getSelectedModelId() {
+        return this.selectedModelId;
+    }
+    
+    // 선택된 모델 객체 가져오기
+    getSelectedObject() {
+        return this.selectedObject;
+    }
+    
+    // 재질 개선
+    enhanceMaterial(material) {
+        if (!material) return;
+        
+        // 양면 렌더링 활성화
+        material.side = THREE.DoubleSide;
+        
+        // 발광 속성 설정 (더 잘 보이게)
+        material.emissive = material.emissive || new THREE.Color(0x222222);
+        
+        // 투명도 설정 개선
+        if (material.transparent) {
+            // 최소 투명도 보장
+            material.opacity = Math.max(0.8, material.opacity);
         }
         
-        return Object.keys(this.animations.get(modelId));
-    }
-    
-    // 로딩 상태 표시
-    showLoadingInfo(message) {
-        const messagesElement = document.getElementById('messages');
-        if (messagesElement) {
-            messagesElement.textContent = message;
-            messagesElement.style.display = 'block';
-            messagesElement.style.backgroundColor = 'rgba(0, 0, 255, 0.7)';
-        }
-    }
-    
-    // 메시지 표시
-    showMessage(message) {
-        const messagesElement = document.getElementById('messages');
-        if (messagesElement) {
-            messagesElement.textContent = message;
-            messagesElement.style.display = 'block';
-            messagesElement.style.backgroundColor = 'rgba(0, 128, 0, 0.7)';
-            
-            // 3초 후 메시지 숨기기
-            setTimeout(() => {
-                messagesElement.style.display = 'none';
-            }, 3000);
-        }
-    }
-    
-    // 경고 메시지 표시
-    showWarning(message) {
-        const messagesElement = document.getElementById('messages');
-        if (messagesElement) {
-            messagesElement.textContent = message;
-            messagesElement.style.display = 'block';
-            messagesElement.style.backgroundColor = 'rgba(255, 0, 0, 0.7)';
-            
-            // 3초 후 메시지 숨기기
-            setTimeout(() => {
-                messagesElement.style.display = 'none';
-            }, 3000);
+        // 기타 품질 향상 설정
+        material.dithering = true;
+        
+        // 텍스처가 있는 경우 필터링 품질 향상
+        if (material.map) {
+            material.map.anisotropy = 16;
+            material.map.minFilter = THREE.LinearMipmapLinearFilter;
+            material.map.magFilter = THREE.LinearFilter;
         }
     }
     
     // 애니메이션 업데이트 (메인 애니메이션 루프에서 호출)
-    update() {
-        if (this.mixer) {
-            const delta = this.clock.getDelta();
-            this.mixer.update(delta);
+    update(delta) {
+        // 애니메이션 믹서 업데이트
+        this.models.forEach(model => {
+            if (model.mixer) {
+                model.mixer.update(delta);
+            }
+        });
+        
+        // 선택 박스 업데이트
+        if (this.selectionBox.visible) {
+            this.selectionBox.update();
         }
     }
 }

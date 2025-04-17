@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 
 export class UIManager {
-    constructor(floorManager, agvGridManager, raycaster, camera, scene) {
+    constructor(floorManager, agvGridManager, raycaster, mouse, camera, scene) {
         this.floorManager = floorManager;
         this.agvGridManager = agvGridManager;
         this.raycaster = raycaster;
+        this.mouse = mouse;
         this.camera = camera;
         this.scene = scene; // Scene 참조 추가
         

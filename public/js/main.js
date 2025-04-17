@@ -4,6 +4,7 @@ import { SceneManager } from './SceneManager.js';
 import { FloorManager } from './FloorManager.js';
 import { AGVGridManager } from './AGVGridManager.js';
 import { UIManager } from './UIManager.js';
+import { CollisionManager } from './CollisionManager.js';
 import { ModelManager } from './ModelManager.js';
 import { ModelUIManager } from './ModelUIManager.js';
 
@@ -51,7 +52,7 @@ class App {
 
         // 2D 카메라 컨트롤 설정 - 패닝만 가능하도록
         this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        this.controls.enableRotate = true; // 회전 활성화 (3D 모델 확인을 위해 변경)
+        this.controls.enableRotate = false; // 회전 비활성화
         this.controls.enableZoom = true;    // 줌은 활성화
         this.controls.screenSpacePanning = true; // 스크린 공간 패닝 활성화
         this.controls.enableDamping = true;
@@ -86,20 +87,28 @@ class App {
         // Initialize AGV grid manager
         this.agvGridManager = new AGVGridManager(this.sceneManager, this.floorManager);
         
-        // Initialize UI manager - scene 참조 추가
+        // Initialize collision manager
+        this.collisionManager = new CollisionManager();
+        this.collisionManager.setCollisionCallback(this.handleCollisionChange.bind(this));
+        
+        // Initialize model manager
+        this.modelManager = new ModelManager(this.scene, this.collisionManager);
+        
+        // 그리드 경계 설정
+        this.setGridBoundaryToModels();
+        
+        // Initialize model UI manager
+        this.modelUIManager = new ModelUIManager(this.modelManager);
+        
+        // Initialize UI manager
         this.uiManager = new UIManager(
             this.floorManager, 
             this.agvGridManager, 
             this.raycaster, 
+            this.mouse, 
             this.camera,
             this.scene
         );
-        
-        // Initialize model manager
-        this.modelManager = new ModelManager(this.sceneManager);
-        
-        // Initialize model UI manager
-        this.modelUIManager = new ModelUIManager(this.modelManager);
 
         // Create initial floor
         this.floorManager.createFloor();
@@ -139,6 +148,29 @@ class App {
         // 컨트롤 센터를 바닥 중앙으로 설정
         this.controls.target.set(floorDimensions.width / 2, 0, floorDimensions.depth / 2);
         this.controls.update();
+        
+        // 모델 관리자에 그리드 경계 업데이트
+        this.setGridBoundaryToModels();
+    }
+    
+    // 모델 관리자에 그리드 경계 설정
+    setGridBoundaryToModels() {
+        if (this.modelManager) {
+            const floorDimensions = this.floorManager.getDimensions();
+            const gridBoundary = new THREE.Box3(
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth)
+            );
+            this.modelManager.setGridBoundary(gridBoundary);
+        }
+    }
+    
+    // 충돌 상태 변경 처리
+    handleCollisionChange(hasCollision) {
+        const collisionElement = document.getElementById('collision-message');
+        if (collisionElement) {
+            collisionElement.style.display = hasCollision ? 'block' : 'none';
+        }
     }
 
     initEventListeners() {
@@ -241,7 +273,16 @@ class App {
             // 컨트롤 업데이트
             this.controls = new OrbitControls(this.camera, this.renderer.domElement);
             this.controls.target.set(floorDimensions.width / 2, 0, floorDimensions.depth / 2);
-            this.controls.enableRotate = false; // 회전 비활성화
+            
+            // 회전 완전히 비활성화 (2D 모드에서는 회전 불가능하게)
+            this.controls.enableRotate = false;
+            
+            // 카메라 고정을 위한 추가 설정
+            this.controls.minPolarAngle = Math.PI/2; // 90도 각도 고정
+            this.controls.maxPolarAngle = Math.PI/2; // 90도 각도 고정
+            this.controls.minAzimuthAngle = 0; // 방위각 고정
+            this.controls.maxAzimuthAngle = 0; // 방위각 고정
+            
             this.controls.enableZoom = true;
             this.controls.screenSpacePanning = true;
             this.controls.enableDamping = true;
@@ -260,8 +301,49 @@ class App {
         // Update the raycaster
         this.raycaster.setFromCamera(this.mouse, this.camera);
         
-        // Let UI manager handle the click
-        this.uiManager.handleClick(this.mouse);
+        // First, check for model intersections
+        const models = this.modelManager.getAllModels();
+        const selectionMeshes = models.map(model => model.selectionMesh);
+        const allMeshes = [];
+        
+        models.forEach(model => {
+            model.originalModel.traverse(node => {
+                if (node.isMesh) {
+                    allMeshes.push(node);
+                }
+            });
+        });
+        
+        // 모든 가능한 객체를 대상으로 레이캐스트
+        const targetObjects = [...selectionMeshes, ...allMeshes];
+        const modelIntersects = this.raycaster.intersectObjects(targetObjects);
+        
+        if (modelIntersects.length > 0) {
+            // 교차 객체의 모델 ID 찾기
+            const hitObject = modelIntersects[0].object;
+            
+            // 직접 모델 ID 있는지 확인
+            if (hitObject.userData && hitObject.userData.modelId !== undefined) {
+                this.modelManager.selectModel(hitObject.userData.modelId);
+                return;
+            }
+            
+            // 부모에 모델 ID 있는지 확인
+            let parent = hitObject.parent;
+            while (parent) {
+                if (parent.userData && parent.userData.modelId !== undefined) {
+                    this.modelManager.selectModel(parent.userData.modelId);
+                    return;
+                }
+                parent = parent.parent;
+            }
+        } else {
+            // 모델 없으면 선택 해제하고 바닥 처리
+            this.modelManager.clearSelection();
+            
+            // Let UI manager handle the click for floor
+            this.uiManager.handleClick(this.mouse);
+        }
     }
 
     onMouseMove(event) {
@@ -300,12 +382,14 @@ class App {
     animate() {
         requestAnimationFrame(() => this.animate());
         
+        const delta = this.clock ? this.clock.getDelta() : 0.016;
+        
         // 컨트롤 업데이트
         this.controls.update();
         
-        // 애니메이션 업데이트
+        // 모델 애니메이션 업데이트
         if (this.modelManager) {
-            this.modelManager.update();
+            this.modelManager.update(delta);
         }
         
         // 렌더링
