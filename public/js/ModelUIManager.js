@@ -140,6 +140,87 @@ export class ModelUIManager {
             });
         }
         
+        // 왼쪽으로 90도 회전 버튼
+        this.rotateLeft90Button = document.getElementById('rotate-left-90');
+        if (this.rotateLeft90Button) {
+            this.rotateLeft90Button.addEventListener('click', () => {
+                const modelId = this.modelManager.getSelectedModelId();
+                if (modelId !== null) {
+                    // 현재 모델 참조 저장
+                    const model = this.modelManager.getModel(modelId);
+                    if (!model) return;
+                    
+                    // 회전 전 선택 참조 저장
+                    const selectedId = this.modelManager.getSelectedModelId();
+                    
+                    // 왼쪽으로 90도 회전 (-90도)
+                    model.root.rotation.y -= Math.PI / 2; // 라디안으로 직접 회전
+                    
+                    // 회전 후 Y축 값 업데이트
+                    this.modelRotYInput.value = THREE.MathUtils.radToDeg(model.root.rotation.y).toFixed(0);
+                    
+                    // 바운딩 박스 및 충돌 박스 업데이트
+                    if (this.modelManager.collisionManager) {
+                        this.modelManager.collisionManager.updateModelBoundingBox(model);
+                        this.modelManager.collisionManager.checkAllCollisions();
+                    }
+                    
+                    // 선택 상태 강제 유지 (타이밍 이슈 방지를 위해 setTimeout 사용)
+                    setTimeout(() => {
+                        if (this.modelManager.getSelectedModelId() !== selectedId) {
+                            this.modelManager.selectModel(selectedId);
+                        }
+                        this.updateModelSelection(selectedId);
+                    }, 10);
+                    
+                    this.showMessage(`모델 ${modelId}를 왼쪽으로 90° 회전했습니다`);
+                } else {
+                    this.showWarning('회전할 모델을 먼저 선택하세요');
+                }
+            });
+        }
+
+
+        // 오른쪽으로 90도 회전 버튼
+        this.rotateRight90Button = document.getElementById('rotate-right-90');
+        if (this.rotateRight90Button) {
+            this.rotateRight90Button.addEventListener('click', () => {
+                const modelId = this.modelManager.getSelectedModelId();
+                if (modelId !== null) {
+                    // 현재 모델 참조 저장
+                    const model = this.modelManager.getModel(modelId);
+                    if (!model) return;
+                    
+                    // 회전 전 선택 참조 저장
+                    const selectedId = this.modelManager.getSelectedModelId();
+                    
+                    // 오른쪽으로 90도 회전 (90도)
+                    model.root.rotation.y += Math.PI / 2; // 라디안으로 직접 회전
+                    
+                    // 회전 후 Y축 값 업데이트
+                    this.modelRotYInput.value = THREE.MathUtils.radToDeg(model.root.rotation.y).toFixed(0);
+                    
+                    // 바운딩 박스 및 충돌 박스 업데이트
+                    if (this.modelManager.collisionManager) {
+                        this.modelManager.collisionManager.updateModelBoundingBox(model);
+                        this.modelManager.collisionManager.checkAllCollisions();
+                    }
+                    
+                    // 선택 상태 강제 유지 (타이밍 이슈 방지를 위해 setTimeout 사용)
+                    setTimeout(() => {
+                        if (this.modelManager.getSelectedModelId() !== selectedId) {
+                            this.modelManager.selectModel(selectedId);
+                        }
+                        this.updateModelSelection(selectedId);
+                    }, 10);
+                    
+                    this.showMessage(`모델 ${modelId}를 오른쪽으로 90° 회전했습니다`);
+                } else {
+                    this.showWarning('회전할 모델을 먼저 선택하세요');
+                }
+            });
+        }
+         
         // 모델 선택 콜백 설정
         this.modelManager.setCallbacks(
             (model) => this.handleModelLoaded(model),
