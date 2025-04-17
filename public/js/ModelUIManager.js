@@ -26,6 +26,12 @@ export class ModelUIManager {
         // 충돌 감지 토글
         this.collisionToggle = document.getElementById('collision-toggle');
         
+        // 애니메이션 제어 UI 요소
+        this.animationInfo = document.getElementById('animation-info');
+        this.animationSelect = document.getElementById('animation-select');
+        this.animationPlayButton = document.getElementById('animation-play');
+        this.animationPauseButton = document.getElementById('animation-pause');
+        
         this.initEventListeners();
     }
     
@@ -72,6 +78,7 @@ export class ModelUIManager {
                 if (!isNaN(modelId)) {
                     this.modelManager.removeModel(modelId);
                     this.updateModelList();
+                    this.updateAnimationControls(null); // 애니메이션 컨트롤 초기화
                 } else {
                     this.showWarning('삭제할 모델 ID를 입력하세요');
                 }
@@ -83,6 +90,7 @@ export class ModelUIManager {
             this.removeAllModelsButton.addEventListener('click', () => {
                 this.modelManager.clearAllModels();
                 this.updateModelList();
+                this.updateAnimationControls(null); // 애니메이션 컨트롤 초기화
             });
         }
         
@@ -90,6 +98,45 @@ export class ModelUIManager {
         if (this.collisionToggle) {
             this.collisionToggle.addEventListener('change', (event) => {
                 this.modelManager.collisionManager.setEnabled(event.target.checked);
+            });
+        }
+        
+        // 애니메이션 선택 변경 이벤트
+        if (this.animationSelect) {
+            this.animationSelect.addEventListener('change', () => {
+                const modelId = this.modelManager.getSelectedModelId();
+                if (modelId !== null) {
+                    const animIndex = parseInt(this.animationSelect.value);
+                    if (animIndex >= 0) {
+                        this.modelManager.playAnimation(modelId, animIndex);
+                        this.animationPlayButton.disabled = false;
+                        this.animationPauseButton.disabled = false;
+                    } else {
+                        // 애니메이션 없음 선택 시 버튼 비활성화
+                        this.animationPlayButton.disabled = true;
+                        this.animationPauseButton.disabled = true;
+                    }
+                }
+            });
+        }
+        
+        // 애니메이션 재생 버튼
+        if (this.animationPlayButton) {
+            this.animationPlayButton.addEventListener('click', () => {
+                const modelId = this.modelManager.getSelectedModelId();
+                if (modelId !== null) {
+                    this.modelManager.toggleAnimation(modelId, true); // true = 재생
+                }
+            });
+        }
+        
+        // 애니메이션 일시정지 버튼
+        if (this.animationPauseButton) {
+            this.animationPauseButton.addEventListener('click', () => {
+                const modelId = this.modelManager.getSelectedModelId();
+                if (modelId !== null) {
+                    this.modelManager.toggleAnimation(modelId, false); // false = 일시정지
+                }
             });
         }
         
@@ -192,6 +239,11 @@ export class ModelUIManager {
     
     handleModelLoaded(model) {
         this.updateModelList();
+        
+        // 모델에 애니메이션이 있는지 확인
+        if (model.animations && model.animations.length > 0) {
+            this.showMessage(`모델 ${model.id}에 ${model.animations.length}개의 애니메이션이 있습니다`);
+        }
     }
     
     handleModelSelected(modelId) {
@@ -212,6 +264,74 @@ export class ModelUIManager {
                 this.modelRotZInput.value = THREE.MathUtils.radToDeg(model.root.rotation.z).toFixed(0);
                 
                 this.modelScaleInput.value = model.root.scale.x.toFixed(2);
+                
+                // 애니메이션 컨트롤 업데이트
+                this.updateAnimationControls(model);
+            }
+        } else {
+            // 선택 해제 시 애니메이션 컨트롤 초기화
+            this.updateAnimationControls(null);
+        }
+    }
+    
+    // 애니메이션 컨트롤 업데이트
+    updateAnimationControls(model) {
+        // 애니메이션 선택 드롭다운 초기화
+        if (this.animationSelect) {
+            this.animationSelect.innerHTML = '<option value="-1">애니메이션 없음</option>';
+            this.animationSelect.disabled = true;
+        }
+        
+        // 애니메이션 정보 패널 업데이트
+        if (this.animationInfo) {
+            this.animationInfo.textContent = '선택된 모델 없음';
+        }
+        
+        // 애니메이션 버튼 비활성화
+        if (this.animationPlayButton) {
+            this.animationPlayButton.disabled = true;
+        }
+        
+        if (this.animationPauseButton) {
+            this.animationPauseButton.disabled = true;
+        }
+        
+        // 모델이 선택된 경우 애니메이션 컨트롤 업데이트
+        if (model) {
+            // 애니메이션 정보 업데이트
+            if (this.animationInfo) {
+                if (model.animations && model.animations.length > 0) {
+                    this.animationInfo.textContent = `모델 ${model.id}: ${model.animations.length}개의 애니메이션 있음`;
+                } else {
+                    this.animationInfo.textContent = `모델 ${model.id}: 애니메이션 없음`;
+                }
+            }
+            
+            // 애니메이션이 있는 경우 드롭다운 활성화 및 옵션 추가
+            if (model.animations && model.animations.length > 0 && this.animationSelect) {
+                this.animationSelect.disabled = false;
+                
+                // 애니메이션 옵션 추가
+                model.animations.forEach((anim, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = anim.name || `애니메이션 ${index + 1}`;
+                    this.animationSelect.appendChild(option);
+                });
+                
+                // 현재 실행 중인 애니메이션이 있으면 선택
+                if (model.currentAction) {
+                    // 현재 액션의 인덱스 찾기
+                    const currentAnimIndex = model.animations.findIndex(
+                        anim => model.currentAction.getClip().name === anim.name
+                    );
+                    
+                    if (currentAnimIndex >= 0) {
+                        this.animationSelect.value = currentAnimIndex;
+                        this.animationPlayButton.disabled = false;
+                        this.animationPauseButton.disabled = false;
+                    }
+                }
             }
         }
     }
@@ -247,20 +367,33 @@ export class ModelUIManager {
             });
             
             // 모델 정보
-            modelElement.innerHTML = `
+            const modelInfo = document.createElement('div');
+            modelInfo.className = 'model-info';
+            modelInfo.innerHTML = `
                 <div><strong>ID:</strong> ${model.id}</div>
                 <div><strong>이름:</strong> ${model.name}</div>
                 <div><strong>위치:</strong> X=${model.root.position.x.toFixed(2)}, 
-                                  Y=${model.root.position.y.toFixed(2)}, 
                                   Z=${model.root.position.z.toFixed(2)}</div>
                 <div><strong>크기:</strong> ${model.root.scale.x.toFixed(2)}x</div>
             `;
             
+            // 애니메이션 정보 추가
+            if (model.animations && model.animations.length > 0) {
+                const animInfo = document.createElement('div');
+                animInfo.innerHTML = `<strong>애니메이션:</strong> ${model.animations.length}개`;
+                modelInfo.appendChild(animInfo);
+            }
+            
+            modelElement.appendChild(modelInfo);
+            
+            // 버튼 컨테이너
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'button-container';
+            
             // 모델 삭제 버튼
             const removeBtn = document.createElement('button');
             removeBtn.textContent = '삭제';
-            removeBtn.style.width = 'auto';
-            removeBtn.style.marginRight = '5px';
+            removeBtn.className = 'inline-button';
             removeBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // 버블링 방지
                 this.modelManager.removeModel(model.id);
@@ -270,20 +403,42 @@ export class ModelUIManager {
             // 선택 버튼
             const selectBtn = document.createElement('button');
             selectBtn.textContent = '선택';
-            selectBtn.style.width = 'auto';
+            selectBtn.className = 'inline-button';
             selectBtn.addEventListener('click', (e) => {
                 e.stopPropagation(); // 버블링 방지
                 this.modelManager.selectModel(model.id);
             });
             
-            const buttonContainer = document.createElement('div');
-            buttonContainer.style.display = 'flex';
-            buttonContainer.style.marginTop = '5px';
-            buttonContainer.appendChild(removeBtn);
             buttonContainer.appendChild(selectBtn);
+            buttonContainer.appendChild(removeBtn);
+            
+            // 애니메이션 버튼 추가 (모델에 애니메이션이 있는 경우)
+            if (model.animations && model.animations.length > 0) {
+                // 애니메이션 재생 버튼
+                const playBtn = document.createElement('button');
+                playBtn.textContent = '▶';
+                playBtn.className = 'inline-button';
+                playBtn.title = '애니메이션 재생';
+                playBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.modelManager.toggleAnimation(model.id, true);
+                });
+                
+                // 애니메이션 일시정지 버튼
+                const pauseBtn = document.createElement('button');
+                pauseBtn.textContent = '❚❚';
+                pauseBtn.className = 'inline-button';
+                pauseBtn.title = '애니메이션 일시정지';
+                pauseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.modelManager.toggleAnimation(model.id, false);
+                });
+                
+                buttonContainer.appendChild(playBtn);
+                buttonContainer.appendChild(pauseBtn);
+            }
             
             modelElement.appendChild(buttonContainer);
-            
             this.modelsList.appendChild(modelElement);
         });
     }

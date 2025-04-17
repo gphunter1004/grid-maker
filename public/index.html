@@ -4,232 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>공장 물류 환경 시뮬레이터</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: Arial, sans-serif;
-        }
-
-        canvas {
-            display: block;
-        }
-
-        #gui-container {
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 300px;
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 10px;
-            border-radius: 0 0 0 10px;
-            z-index: 100;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-            max-height: 90vh;
-            overflow-y: auto;
-        }
-
-        .panel {
-            margin-bottom: 15px;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            background-color: #f9f9f9;
-        }
-
-        .panel-title {
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #333;
-            font-size: 16px;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 5px;
-        }
-
-        .form-group {
-            margin-bottom: 8px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 3px;
-            font-size: 14px;
-        }
-
-        input[type="number"] {
-            width: calc(100% - 8px);
-            padding: 4px;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            font-size: 14px;
-        }
-
-        input[type="checkbox"] {
-            margin-right: 5px;
-        }
-
-        button {
-            width: 100%;
-            padding: 8px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            margin-top: 5px;
-            transition: background-color 0.3s;
-        }
-
-        button:hover {
-            background-color: #45a049;
-        }
-
-        #coordinate-info {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            pointer-events: none;
-            z-index: 50;
-        }
-
-        #messages {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            background-color: rgba(255, 0, 0, 0.7);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 5px;
-            font-size: 14px;
-            font-weight: bold;
-            display: none;
-            z-index: 150;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-            max-width: 400px;
-        }
-
-        #tooltip {
-            display: none;
-            position: absolute;
-            background-color: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 5px 8px;
-            border-radius: 3px;
-            font-size: 14px;
-            pointer-events: none;
-            z-index: 100;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-        }
-
-        #position-panel {
-            position: absolute;
-            bottom: 10px;
-            right: 10px;
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 12px;
-            border-radius: 5px;
-            border: 1px solid #ccc;
-            font-family: monospace;
-            min-width: 250px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            z-index: 50;
-        }
-
-        #position-panel div:first-child {
-            font-weight: bold;
-            margin-bottom: 8px;
-            font-size: 15px;
-            color: #333;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 5px;
-        }
-
-        #position-panel div:not(:first-child) {
-            padding: 3px 0;
-            font-size: 14px;
-        }
-
-        /* 도면 모드 특별 스타일 */
-        .blueprint-mode #gui-container {
-            background-color: rgba(240, 248, 255, 0.95);
-        }
-
-        .blueprint-mode .panel {
-            border-color: #b8d4f5;
-            background-color: #f0f8ff;
-        }
-
-        .blueprint-mode #position-panel {
-            background-color: rgba(240, 248, 255, 0.95);
-            border-color: #b8d4f5;
-        }
-        
-        /* 모델 로딩 관련 스타일 */
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            z-index: 1000;
-            display: none;
-        }
-        
-        #models-panel {
-            position: absolute;
-            left: 10px;
-            top: 50px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            max-width: 300px;
-            z-index: 10;
-            max-height: 50vh;
-            overflow-y: auto;
-        }
-        
-        .model-item {
-            margin-bottom: 10px;
-            padding: 8px;
-            background: rgba(50, 50, 50, 0.5);
-            border-radius: 4px;
-        }
-        
-        .model-item.selected {
-            background-color: rgba(255, 255, 0, 0.3);
-            border: 1px solid yellow;
-        }
-        
-        .model-item.collision {
-            outline: 2px solid red;
-            background-color: rgba(255, 0, 0, 0.2);
-        }
-        
-        #collisionMessage {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(255, 0, 0, 0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-weight: bold;
-            display: none;
-            z-index: 50;
-        }
-    </style>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
     <div id="gui-container">
@@ -346,6 +121,39 @@
                     <input type="checkbox" id="collision-toggle" checked> 충돌 감지 활성화
                 </label>
             </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="grid-snap-toggle"> 그리드 스냅 활성화
+                </label>
+            </div>
+        </div>
+
+        <!-- 애니메이션 제어 패널 추가 -->
+        <div class="panel" id="animation-panel">
+            <div class="panel-title">애니메이션 제어</div>
+            <div id="animation-info">선택된 모델 없음</div>
+            <div class="form-group">
+                <label for="animation-select">애니메이션 선택:</label>
+                <select id="animation-select" disabled>
+                    <option value="-1">애니메이션 없음</option>
+                </select>
+            </div>
+            <div class="animation-controls">
+                <button id="animation-play" disabled>재생</button>
+                <button id="animation-pause" disabled>일시정지</button>
+            </div>
+        </div>
+
+        <!-- 모델 조작 가이드 패널 추가 -->
+        <div class="panel">
+            <div class="panel-title">모델 조작 가이드</div>
+            <div class="guide-section">
+                <p><strong>선택:</strong> 모델 클릭</p>
+                <p><strong>이동:</strong> 방향키 또는 마우스 드래그</p>
+                <p><strong>회전:</strong> Ctrl+좌우 방향키 또는 스페이스바</p>
+                <p><strong>삭제:</strong> Delete 키</p>
+                <p><strong>선택 해제:</strong> ESC 키 또는 빈 공간 클릭</p>
+            </div>
         </div>
 
         <div class="panel">
@@ -375,7 +183,7 @@
         <h3>로드된 모델</h3>
         <div id="models-list"></div>
     </div>
-    <div id="collision-message" style="display: none;">충돌 발생!</div>
+    <div id="collision-message">충돌 발생!</div>
 
     <script type="importmap">
         {

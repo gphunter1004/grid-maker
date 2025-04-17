@@ -13,9 +13,21 @@ class App {
         // 전역 참조 설정 - UI에서 사용
         window.app = this;
         
+        // 입력 상태 관리
+        this.inputState = {
+            isMouseDown: false,
+            isDragging: false,
+            isControlPressed: false,
+            keyboardMoveEnabled: true
+        };
+        
         this.initScene();
         this.initManagers();
         this.initEventListeners();
+        
+        // 애니메이션 타이밍을 위한 시계 객체 생성
+        this.clock = new THREE.Clock();
+        
         this.animate();
     }
 
@@ -115,6 +127,14 @@ class App {
         
         // 바닥 생성 후 카메라 위치 조정
         this.updateCameraPositionBasedOnFloor();
+        
+        // 충돌 발생 시에도 선택된 객체는 이동 가능하도록 설정
+        this.modelManager.setMoveConstraints({
+            allowCollisionMove: true,
+            moveSpeed: 0.2,
+            gridSnap: false,
+            gridSize: 0.5
+        });
     }
     
     // 바닥 크기에 따라 카메라 위치 조정
@@ -174,11 +194,17 @@ class App {
     }
 
     initEventListeners() {
-        // Listen for mouse click
+        // 기본 이벤트 리스너
         document.addEventListener('click', (event) => this.onClick(event), false);
-        
-        // Listen for mouse move to update coordinate display
         document.addEventListener('mousemove', (event) => this.onMouseMove(event), false);
+        
+        // 마우스 드래그 및 선택 관련 이벤트
+        document.addEventListener('mousedown', (event) => this.onMouseDown(event), false);
+        document.addEventListener('mouseup', (event) => this.onMouseUp(event), false);
+        
+        // 키보드 이벤트
+        document.addEventListener('keydown', (event) => this.onKeyDown(event), false);
+        document.addEventListener('keyup', (event) => this.onKeyUp(event), false);
         
         // 3D 모델 관점 버튼
         const view3DButton = document.getElementById('view-3d-mode');
@@ -191,8 +217,216 @@ class App {
         if (view2DButton) {
             view2DButton.addEventListener('click', () => this.toggle2DView());
         }
+        
+        // 그리드 스냅 토글 체크박스
+        const gridSnapToggle = document.getElementById('grid-snap-toggle');
+        if (gridSnapToggle) {
+            gridSnapToggle.addEventListener('change', (e) => {
+                this.modelManager.toggleGridSnap(e.target.checked);
+                this.uiManager.showMessage(`그리드 스냅: ${e.target.checked ? '활성화됨' : '비활성화됨'}`);
+            });
+        }
     }
     
+    // 마우스 다운 핸들러 - 드래그 시작
+    onMouseDown(event) {
+        // 마우스 왼쪽 버튼인 경우만 처리
+        if (event.button !== 0) return;
+        
+        this.inputState.isMouseDown = true;
+        
+        // 마우스 위치 업데이트
+        this.updateMouseCoordinates(event);
+        
+        // 선택된 모델이 있는 경우
+        if (this.modelManager.getSelectedModelId() !== null) {
+            // 드래그 시작
+            if (this.modelManager.startDrag(this.raycaster, this.mouse)) {
+                this.inputState.isDragging = true;
+                
+                // OrbitControls 비활성화
+                this.controls.enabled = false;
+                
+                // 이벤트 전파 중단
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }
+    }
+    
+    // 마우스 이동 핸들러 - 드래그 업데이트
+    onMouseMove(event) {
+        // 마우스 좌표 업데이트
+        this.updateMouseCoordinates(event);
+        
+        // UI 매니저에 마우스 위치 전달 (툴팁, 좌표 표시 등)
+        this.uiManager.updateMousePosition(this.mouse);
+        
+        // 드래그 중인 경우 모델 이동
+        if (this.inputState.isDragging && this.inputState.isMouseDown) {
+            this.modelManager.updateDrag(this.raycaster, this.mouse);
+            
+            // 이벤트 전파 중단
+            event.preventDefault();
+            event.stopPropagation();
+        }
+    }
+    
+    // 마우스 업 핸들러 - 드래그 종료
+    onMouseUp(event) {
+        // 마우스 왼쪽 버튼인 경우만 처리
+        if (event.button !== 0) return;
+        
+        this.inputState.isMouseDown = false;
+        
+        // 드래그 중이었다면 종료
+        if (this.inputState.isDragging) {
+            this.modelManager.endDrag();
+            this.inputState.isDragging = false;
+            
+            // OrbitControls 다시 활성화
+            this.controls.enabled = true;
+            
+            // 이벤트 전파 중단
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+        
+        // 기본 클릭 처리는 onClick에서 수행
+    }
+    
+    // 키보드 다운 핸들러
+    onKeyDown(event) {
+        // 방향키로 모델 이동
+        if (this.inputState.keyboardMoveEnabled && this.modelManager.getSelectedModelId() !== null) {
+            const moveSpeed = this.modelManager.moveConstraints.moveSpeed;
+            
+            switch (event.key) {
+                case 'ArrowLeft':
+                    this.modelManager.moveSelectedModelByDelta(-moveSpeed, 0);
+                    event.preventDefault();
+                    break;
+                case 'ArrowRight':
+                    this.modelManager.moveSelectedModelByDelta(moveSpeed, 0);
+                    event.preventDefault();
+                    break;
+                case 'ArrowUp':
+                    this.modelManager.moveSelectedModelByDelta(0, -moveSpeed);
+                    event.preventDefault();
+                    break;
+                case 'ArrowDown':
+                    this.modelManager.moveSelectedModelByDelta(0, moveSpeed);
+                    event.preventDefault();
+                    break;
+                case ' ': // 스페이스바 - 회전
+                    this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
+                    event.preventDefault();
+                    break;
+                case 'Control':
+                    this.inputState.isControlPressed = true;
+                    break;
+                case 'Delete':
+                    // 선택된 모델 삭제
+                    const modelId = this.modelManager.getSelectedModelId();
+                    if (modelId !== null) {
+                        this.modelManager.removeModel(modelId);
+                        this.uiManager.showMessage(`모델 ${modelId} 삭제됨`);
+                    }
+                    event.preventDefault();
+                    break;
+                case 'Escape':
+                    // 선택 해제
+                    this.modelManager.clearSelection();
+                    this.uiManager.showMessage('선택 해제됨');
+                    event.preventDefault();
+                    break;
+            }
+            
+            // Ctrl + 방향키: 회전
+            if (this.inputState.isControlPressed) {
+                switch (event.key) {
+                    case 'ArrowLeft':
+                        this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), -15);
+                        event.preventDefault();
+                        break;
+                    case 'ArrowRight':
+                        this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
+                        event.preventDefault();
+                        break;
+                }
+            }
+        }
+    }
+    
+    // 키보드 업 핸들러
+    onKeyUp(event) {
+        if (event.key === 'Control') {
+            this.inputState.isControlPressed = false;
+        }
+    }
+    
+    // 마우스 좌표 업데이트 (정규화된 디바이스 좌표계)
+    updateMouseCoordinates(event) {
+        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        
+        // 레이캐스터 업데이트
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+    }
+    
+    onClick(event) {
+        // 드래그 중인 경우 클릭 이벤트 무시
+        if (this.inputState.isDragging) return;
+        
+        // 마우스 위치 업데이트
+        this.updateMouseCoordinates(event);
+        
+        // 모델 선택 처리
+        const models = this.modelManager.getAllModels();
+        const selectionMeshes = models.map(model => model.selectionMesh);
+        const allMeshes = [];
+        
+        models.forEach(model => {
+            model.originalModel.traverse(node => {
+                if (node.isMesh) {
+                    allMeshes.push(node);
+                }
+            });
+        });
+        
+        // 모든 가능한 객체를 대상으로 레이캐스트
+        const targetObjects = [...selectionMeshes, ...allMeshes];
+        const modelIntersects = this.raycaster.intersectObjects(targetObjects);
+        
+        if (modelIntersects.length > 0) {
+            // 교차 객체의 모델 ID 찾기
+            const hitObject = modelIntersects[0].object;
+            
+            // 직접 모델 ID 있는지 확인
+            if (hitObject.userData && hitObject.userData.modelId !== undefined) {
+                this.modelManager.selectModel(hitObject.userData.modelId);
+                return;
+            }
+            
+            // 부모에 모델 ID 있는지 확인
+            let parent = hitObject.parent;
+            while (parent) {
+                if (parent.userData && parent.userData.modelId !== undefined) {
+                    this.modelManager.selectModel(parent.userData.modelId);
+                    return;
+                }
+                parent = parent.parent;
+            }
+        } else {
+            // 모델 없으면 선택 해제하고 바닥 처리
+            this.modelManager.clearSelection();
+            
+            // Let UI manager handle the click for floor
+            this.uiManager.handleClick(this.mouse);
+        }
+    }
+
     // 3D 관점으로 전환
     toggle3DView() {
         // 카메라 타입 확인
@@ -293,68 +527,6 @@ class App {
         }
     }
 
-    onClick(event) {
-        // Calculate mouse position in normalized device coordinates (-1 to +1)
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        
-        // Update the raycaster
-        this.raycaster.setFromCamera(this.mouse, this.camera);
-        
-        // First, check for model intersections
-        const models = this.modelManager.getAllModels();
-        const selectionMeshes = models.map(model => model.selectionMesh);
-        const allMeshes = [];
-        
-        models.forEach(model => {
-            model.originalModel.traverse(node => {
-                if (node.isMesh) {
-                    allMeshes.push(node);
-                }
-            });
-        });
-        
-        // 모든 가능한 객체를 대상으로 레이캐스트
-        const targetObjects = [...selectionMeshes, ...allMeshes];
-        const modelIntersects = this.raycaster.intersectObjects(targetObjects);
-        
-        if (modelIntersects.length > 0) {
-            // 교차 객체의 모델 ID 찾기
-            const hitObject = modelIntersects[0].object;
-            
-            // 직접 모델 ID 있는지 확인
-            if (hitObject.userData && hitObject.userData.modelId !== undefined) {
-                this.modelManager.selectModel(hitObject.userData.modelId);
-                return;
-            }
-            
-            // 부모에 모델 ID 있는지 확인
-            let parent = hitObject.parent;
-            while (parent) {
-                if (parent.userData && parent.userData.modelId !== undefined) {
-                    this.modelManager.selectModel(parent.userData.modelId);
-                    return;
-                }
-                parent = parent.parent;
-            }
-        } else {
-            // 모델 없으면 선택 해제하고 바닥 처리
-            this.modelManager.clearSelection();
-            
-            // Let UI manager handle the click for floor
-            this.uiManager.handleClick(this.mouse);
-        }
-    }
-
-    onMouseMove(event) {
-        // Calculate mouse position in normalized device coordinates (-1 to +1)
-        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        
-        // Update the UI manager with mouse position for coordinate display and tooltips
-        this.uiManager.updateMousePosition(this.mouse);
-    }
-
     onWindowResize() {
         const aspect = window.innerWidth / window.innerHeight;
         
@@ -382,6 +554,7 @@ class App {
     animate() {
         requestAnimationFrame(() => this.animate());
         
+        // 델타 타임 계산 (for 애니메이션)
         const delta = this.clock ? this.clock.getDelta() : 0.016;
         
         // 컨트롤 업데이트
