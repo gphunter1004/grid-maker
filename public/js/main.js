@@ -18,6 +18,7 @@ class App {
             isMouseDown: false,
             isDragging: false,
             isControlPressed: false,
+            isShiftPressed: false, // 시프트 키 상태 추가
             keyboardMoveEnabled: true
         };
         
@@ -298,9 +299,22 @@ class App {
     
     // 키보드 다운 핸들러
     onKeyDown(event) {
+        // 시프트 키 상태 업데이트
+        if (event.key === 'Shift') {
+            this.inputState.isShiftPressed = true;
+        }
+        
+        // 컨트롤 키 상태 업데이트
+        if (event.key === 'Control') {
+            this.inputState.isControlPressed = true;
+        }
+        
         // 방향키로 모델 이동
         if (this.inputState.keyboardMoveEnabled && this.modelManager.getSelectedModelId() !== null) {
-            const moveSpeed = this.modelManager.moveConstraints.moveSpeed;
+            // 기본 또는 정밀 이동 속도 설정
+            const moveSpeed = this.inputState.isShiftPressed 
+                ? this.floorManager.config.scale // 시프트 키가 눌리면 1픽셀 단위로 이동
+                : this.modelManager.moveConstraints.moveSpeed;
             
             switch (event.key) {
                 case 'ArrowLeft':
@@ -322,9 +336,6 @@ class App {
                 case ' ': // 스페이스바 - 회전
                     this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
                     event.preventDefault();
-                    break;
-                case 'Control':
-                    this.inputState.isControlPressed = true;
                     break;
                 case 'Delete':
                     // 선택된 모델 삭제
@@ -363,6 +374,10 @@ class App {
     onKeyUp(event) {
         if (event.key === 'Control') {
             this.inputState.isControlPressed = false;
+        }
+        
+        if (event.key === 'Shift') {
+            this.inputState.isShiftPressed = false;
         }
     }
     

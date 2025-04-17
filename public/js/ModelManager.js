@@ -1,24 +1,20 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { ModelSelectionManager } from './ModelSelectionManager.js';
+import { ModelTransformManager } from './ModelTransformManager.js';
+import { ModelAnimationManager } from './ModelAnimationManager.js';
+import { ModelDragManager } from './ModelDragManager.js';
 
+/**
+ * 모델 관리 클래스
+ * 3D 모델의 기본적인 관리와 다른 모델 관련 매니저 클래스들의 조정을 담당
+ */
 export class ModelManager {
     constructor(scene, collisionManager) {
         this.scene = scene;
         this.collisionManager = collisionManager;
         this.models = [];
         this.nextModelId = 0;
-        this.selectedModelId = null;
-        this.selectedObject = null;
-        
-        // 선택 상자
-        this.selectionBox = new THREE.BoxHelper(new THREE.Object3D(), 0xffff00);
-        this.selectionBox.visible = false;
-        this.scene.add(this.selectionBox);
-        
-        // 이벤트 리스너들을 위한 참조 저장
-        this.onModelLoaded = null;
-        this.onModelSelect = null;
-        this.onModelsChanged = null;
         
         // 그리드 경계 참조
         this.gridBoundary = null;
@@ -29,11 +25,6 @@ export class ModelManager {
         // 로더 초기화
         this.loader = new GLTFLoader();
         
-        // 드래그 관련 상태
-        this.isDragging = false;
-        this.dragOffset = new THREE.Vector3();
-        this.dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0)); // XZ 평면
-        
         // 이동 제약 설정
         this.moveConstraints = {
             allowCollisionMove: true, // 충돌 중에도 이동 허용
@@ -41,6 +32,17 @@ export class ModelManager {
             gridSnap: false,         // 그리드 스냅 활성화 여부
             gridSize: 0.5            // 그리드 스냅 크기
         };
+        
+        // 서브 매니저 초기화
+        this.selectionManager = new ModelSelectionManager(this, scene);
+        this.transformManager = new ModelTransformManager(this, collisionManager);
+        this.animationManager = new ModelAnimationManager(this);
+        this.dragManager = new ModelDragManager(this, collisionManager);
+        
+        // 이벤트 리스너들을 위한 참조 저장
+        this.onModelLoaded = null;
+        this.onModelSelect = null;
+        this.onModelsChanged = null;
     }
 
     // 콜백 설정
@@ -48,11 +50,15 @@ export class ModelManager {
         this.onModelLoaded = onModelLoaded;
         this.onModelSelect = onModelSelect;
         this.onModelsChanged = onModelsChanged;
+        
+        // 선택 매니저의 콜백 설정
+        this.selectionManager.onModelSelect = onModelSelect;
     }
 
     // 그리드 경계 설정
     setGridBoundary(boundary) {
         this.gridBoundary = boundary;
+        this.transformManager.setGridBoundary(boundary);
     }
 
     // 모델 로드
@@ -193,7 +199,7 @@ export class ModelManager {
                 }
                 
                 // 새 모델 선택
-                this.selectModel(modelId);
+                this.selectionManager.selectModel(modelId);
                 
                 // 충돌 감지
                 this.collisionManager.checkAllCollisions();
@@ -217,261 +223,6 @@ export class ModelManager {
         return modelId;
     }
 
-    // 모델 선택
-    selectModel(modelId) {
-        // 이전 선택 지우기
-        this.selectedObject = null;
-        this.selectedModelId = null;
-        this.selectionBox.visible = false;
-
-        // 새 모델 찾기
-        const model = this.models.find(m => m.id === modelId);
-        if (!model) return false;
-
-        // 선택 설정
-        this.selectedObject = model.root;
-        this.selectedModelId = modelId;
-
-        // 모델을 포함하는 경계 박스 표시
-        this.selectionBox.setFromObject(model.root);
-        this.selectionBox.visible = true;
-        
-        // 콜백 호출
-        if (this.onModelSelect) {
-            this.onModelSelect(modelId);
-        }
-        
-        return true;
-    }
-
-    // 선택 해제
-    clearSelection() {
-        this.selectedObject = null;
-        this.selectedModelId = null;
-        this.selectionBox.visible = false;
-        
-        // 콜백 호출
-        if (this.onModelSelect) {
-            this.onModelSelect(null);
-        }
-    }
-
-    // 모델 위치 업데이트
-    updateModelPosition(modelId, axis, value) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model) return false;
-
-        // 이전 위치 저장
-        const previousPosition = model.root.position.clone();
-
-        // 새 위치 계산
-        const newPosition = model.root.position.clone();
-        newPosition[axis] = parseFloat(value);
-        
-        // 그리드 경계 확인 (경계가 설정된 경우)
-        if (this.gridBoundary) {
-            const buffer = Math.max(model.size.x, model.size.z) / 2 * model.root.scale.x;
-            
-            // Y축은 항상 0으로 고정
-            if (axis === 'y') {
-                newPosition.y = 0;
-                model.root.position.y = 0;
-                return true;
-            }
-            
-            // 경계 초과 확인
-            if (axis === 'x') {
-                if (newPosition.x < this.gridBoundary.min.x + buffer || 
-                    newPosition.x > this.gridBoundary.max.x - buffer) {
-                    return false; // 경계 초과 시 이동 불가
-                }
-            } else if (axis === 'z') {
-                if (newPosition.z < this.gridBoundary.min.z + buffer || 
-                    newPosition.z > this.gridBoundary.max.z - buffer) {
-                    return false; // 경계 초과 시 이동 불가
-                }
-            }
-        } else {
-            // 경계가 없더라도 Y축은 항상 0으로 고정
-            if (axis === 'y') {
-                newPosition.y = 0;
-                model.root.position.y = 0;
-                return true;
-            }
-        }
-        
-        // 그리드 스냅 적용 (활성화된 경우)
-        if (this.moveConstraints.gridSnap) {
-            const gridSize = this.moveConstraints.gridSize;
-            if (axis === 'x' || axis === 'z') {
-                newPosition[axis] = Math.round(newPosition[axis] / gridSize) * gridSize;
-            }
-        }
-        
-        // 충돌 검사 (충돌 중 이동 허용 설정에 따라)
-        if (!this.moveConstraints.allowCollisionMove) {
-            const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition);
-            if (!canMove) {
-                return false;
-            }
-        } else {
-            // 충돌 허용 모드인 경우 직접 위치 업데이트 후 충돌 상태 업데이트
-            model.root.position.copy(newPosition);
-            this.collisionManager.updateModelBoundingBox(model);
-            this.collisionManager.checkAllCollisions();
-        }
-        
-        // 선택 상자 업데이트
-        if (this.selectedModelId === modelId && this.selectionBox.visible) {
-            this.selectionBox.update();
-        }
-        
-        return true;
-    }
-
-    // 모델의 X, Z 위치를 동시에 업데이트
-    updateModelXZPosition(modelId, x, z) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model) return false;
-
-        // 이전 위치 저장
-        const previousPosition = model.root.position.clone();
-
-        // 새 위치 계산
-        const newPosition = previousPosition.clone();
-        newPosition.x = x;
-        newPosition.z = z;
-        newPosition.y = 0; // Y축은 항상 0
-
-        // 그리드 경계 확인
-        if (this.gridBoundary) {
-            const buffer = Math.max(model.size.x, model.size.z) / 2 * model.root.scale.x;
-            
-            // 경계 초과 확인 및 조정
-            if (newPosition.x < this.gridBoundary.min.x + buffer) {
-                newPosition.x = this.gridBoundary.min.x + buffer;
-            } else if (newPosition.x > this.gridBoundary.max.x - buffer) {
-                newPosition.x = this.gridBoundary.max.x - buffer;
-            }
-            
-            if (newPosition.z < this.gridBoundary.min.z + buffer) {
-                newPosition.z = this.gridBoundary.min.z + buffer;
-            } else if (newPosition.z > this.gridBoundary.max.z - buffer) {
-                newPosition.z = this.gridBoundary.max.z - buffer;
-            }
-        }
-
-        // 그리드 스냅 적용 (활성화된 경우)
-        if (this.moveConstraints.gridSnap) {
-            const gridSize = this.moveConstraints.gridSize;
-            newPosition.x = Math.round(newPosition.x / gridSize) * gridSize;
-            newPosition.z = Math.round(newPosition.z / gridSize) * gridSize;
-        }
-
-        // 충돌 검사 (충돌 중 이동 허용 설정에 따라)
-        if (!this.moveConstraints.allowCollisionMove) {
-            const canMove = this.collisionManager.checkMoveCollision(model, newPosition, previousPosition);
-            if (!canMove) {
-                return false;
-            }
-        } else {
-            // 충돌 허용 모드인 경우 직접 위치 업데이트 후 충돌 상태 업데이트
-            model.root.position.copy(newPosition);
-            this.collisionManager.updateModelBoundingBox(model);
-            this.collisionManager.checkAllCollisions();
-        }
-
-        // 선택 상자 업데이트
-        if (this.selectedModelId === modelId && this.selectionBox.visible) {
-            this.selectionBox.update();
-        }
-
-        return true;
-    }
-
-    // 모델 이동 (키보드 방향키 또는 상대적 이동)
-    moveSelectedModelByDelta(deltaX, deltaZ) {
-        if (!this.selectedObject || this.selectedModelId === null) return false;
-        
-        const model = this.models.find(m => m.id === this.selectedModelId);
-        if (!model) return false;
-        
-        // 이전 위치
-        const previousPosition = model.root.position.clone();
-        
-        // 새 위치 계산
-        const newPosition = previousPosition.clone();
-        newPosition.x += deltaX;
-        newPosition.z += deltaZ;
-        
-        // 위치 업데이트 함수 호출
-        return this.updateModelXZPosition(model.id, newPosition.x, newPosition.z);
-    }
-
-    // 드래그 시작
-    startDrag(raycaster, mouse) {
-        if (!this.selectedObject || this.selectedModelId === null) return false;
-        
-        const model = this.models.find(m => m.id === this.selectedModelId);
-        if (!model || !model.isDraggable) return false;
-        
-        // 현재 모델 위치에서 드래그 평면 생성
-        this.dragPlane.constant = -model.root.position.y;
-        
-        // 레이와 평면의 교차점 계산
-        const intersectPoint = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)) {
-            this.isDragging = true;
-            
-            // 모델 위치와 마우스 교차점 사이의 오프셋 계산
-            this.dragOffset.copy(model.root.position).sub(intersectPoint);
-            
-            return true;
-        }
-        
-        return false;
-    }
-
-    // 드래그 업데이트
-    updateDrag(raycaster, mouse) {
-        if (!this.isDragging || !this.selectedObject || this.selectedModelId === null) return false;
-        
-        const model = this.models.find(m => m.id === this.selectedModelId);
-        if (!model) return false;
-        
-        // 레이와 평면의 교차점 계산
-        const intersectPoint = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)) {
-            // 새 위치 계산 (오프셋 적용)
-            const newPosition = intersectPoint.clone().add(this.dragOffset);
-            
-            // 모델 위치 업데이트
-            return this.updateModelXZPosition(model.id, newPosition.x, newPosition.z);
-        }
-        
-        return false;
-    }
-
-    // 드래그 종료
-    endDrag() {
-        this.isDragging = false;
-        return true;
-    }
-
-    // 드래그 이동 처리 (기존 메서드 - 호환성 유지)
-    moveSelectedModel(newPosition, previousPosition) {
-        if (!this.selectedObject || this.selectedModelId === null) return false;
-        
-        const model = this.models.find(m => m.id === this.selectedModelId);
-        if (!model) return false;
-        
-        // 새 위치 적용 (Y값은 0으로 고정)
-        newPosition.y = 0;
-        
-        // updateModelXZPosition 메서드 호출
-        return this.updateModelXZPosition(model.id, newPosition.x, newPosition.z);
-    }
-
     // 모든 모델 지우기
     clearAllModels() {
         this.models.forEach(model => {
@@ -481,7 +232,7 @@ export class ModelManager {
         this.collisionManager.setModels(this.models);
         
         // 선택 해제
-        this.clearSelection();
+        this.selectionManager.clearSelection();
         
         // 콜백 호출
         if (this.onModelsChanged) {
@@ -504,8 +255,8 @@ export class ModelManager {
         this.collisionManager.setModels(this.models);
 
         // 선택된 모델 제거 시 선택 해제
-        if (this.selectedModelId === modelId) {
-            this.clearSelection();
+        if (this.selectionManager.selectedModelId === modelId) {
+            this.selectionManager.clearSelection();
         }
 
         // 콜백 호출
@@ -515,132 +266,6 @@ export class ModelManager {
 
         // 충돌 감지 업데이트
         this.collisionManager.checkAllCollisions();
-        
-        return true;
-    }
-
-    // 모델 회전 처리
-    rotateModel(modelId, angle) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model) return false;
-
-        // 이전 회전 값 저장
-        const previousRotation = model.root.rotation.clone();
-        
-        // 새 회전 값 계산 (Y축 기준 회전)
-        const newRotation = model.root.rotation.clone();
-        newRotation.y += angle * (Math.PI / 180); // 각도를 라디안으로 변환
-        
-        // 회전 적용
-        model.root.rotation.copy(newRotation);
-        
-        // 충돌 검사 (회전 후 충돌 발생시 이전 상태로 복원)
-        this.collisionManager.updateModelBoundingBox(model);
-        const collisionDetected = this.collisionManager.checkAllCollisions();
-        
-        if (collisionDetected && model.isColliding && !this.moveConstraints.allowCollisionMove) {
-            model.root.rotation.copy(previousRotation);
-            this.collisionManager.updateModelBoundingBox(model);
-            this.collisionManager.checkAllCollisions();
-            return false;
-        }
-        
-        // 선택 상자 업데이트
-        if (this.selectedModelId === modelId && this.selectionBox.visible) {
-            this.selectionBox.update();
-        }
-        
-        return true;
-    }
-
-    // 모델 스케일 설정
-    setModelScale(modelId, scale) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model) return false;
-        
-        // 스케일 값이 유효한지 확인 (0보다 커야 함)
-        if (scale <= 0) return false;
-        
-        // 이전 스케일 저장
-        const previousScale = model.root.scale.clone();
-        
-        // 새 스케일 적용
-        model.root.scale.set(scale, scale, scale);
-        
-        // 바운딩 박스 업데이트 및 충돌 검사
-        this.collisionManager.updateModelBoundingBox(model);
-        
-        // 그리드 경계 검사 (경계가 설정된 경우)
-        if (this.gridBoundary) {
-            // 스케일이 변경되면 새로운 크기 계산
-            const newSize = model.size.clone().multiplyScalar(scale);
-            const buffer = Math.max(newSize.x, newSize.z) / 2;
-            
-            // 현재 위치가 새 크기로 그리드 경계를 벗어나는지 확인
-            const position = model.root.position;
-            if (position.x - buffer < this.gridBoundary.min.x || 
-                position.x + buffer > this.gridBoundary.max.x ||
-                position.z - buffer < this.gridBoundary.min.z ||
-                position.z + buffer > this.gridBoundary.max.z) {
-                
-                // 이전 스케일로 복원
-                model.root.scale.copy(previousScale);
-                this.collisionManager.updateModelBoundingBox(model);
-                return false;
-            }
-        }
-        
-        const collisionDetected = this.collisionManager.checkAllCollisions();
-        
-        // 충돌이 있고 이 모델이 충돌 중이면 이전 스케일로 복원
-        if (collisionDetected && model.isColliding && !this.moveConstraints.allowCollisionMove) {
-            model.root.scale.copy(previousScale);
-            this.collisionManager.updateModelBoundingBox(model);
-            this.collisionManager.checkAllCollisions();
-            return false;
-        }
-        
-        // 선택 상자 업데이트
-        if (this.selectedModelId === modelId && this.selectionBox.visible) {
-            this.selectionBox.update();
-        }
-        
-        return true;
-    }
-
-    // 애니메이션 재생
-    playAnimation(modelId, animIndex) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model || !model.mixer || !model.animations || model.animations.length === 0) return false;
-
-        // 이전 애니메이션 정지
-        if (model.currentAction) {
-            model.currentAction.stop();
-        }
-
-        // 새 애니메이션 설정 및 재생
-        const animation = model.animations[animIndex];
-        if (animation) {
-            model.currentAction = model.mixer.clipAction(animation);
-            model.currentAction.reset();
-            model.currentAction.play();
-            return true;
-        }
-        
-        return false;
-    }
-
-    // 애니메이션 토글
-    toggleAnimation(modelId, play) {
-        const model = this.models.find(m => m.id === modelId);
-        if (!model || !model.currentAction) return false;
-
-        if (play) {
-            model.currentAction.paused = false;
-            model.currentAction.play();
-        } else {
-            model.currentAction.paused = true;
-        }
         
         return true;
     }
@@ -655,14 +280,74 @@ export class ModelManager {
         return this.models;
     }
     
-    // 선택된 모델 ID 가져오기
+    // 선택된 모델 ID 가져오기 (위임)
     getSelectedModelId() {
-        return this.selectedModelId;
+        return this.selectionManager.getSelectedModelId();
     }
     
-    // 선택된 모델 객체 가져오기
+    // 선택된 모델 객체 가져오기 (위임)
     getSelectedObject() {
-        return this.selectedObject;
+        return this.selectionManager.getSelectedObject();
+    }
+    
+    // 모델 선택 (위임)
+    selectModel(modelId) {
+        return this.selectionManager.selectModel(modelId);
+    }
+    
+    // 선택 해제 (위임)
+    clearSelection() {
+        return this.selectionManager.clearSelection();
+    }
+    
+    // 모델 위치 업데이트 (위임)
+    updateModelPosition(modelId, axis, value) {
+        return this.transformManager.updateModelPosition(modelId, axis, value);
+    }
+    
+    // 모델 XZ 위치 동시 업데이트 (위임)
+    updateModelXZPosition(modelId, x, z) {
+        return this.transformManager.updateModelXZPosition(modelId, x, z);
+    }
+    
+    // 선택된 모델 이동 (위임)
+    moveSelectedModelByDelta(deltaX, deltaZ) {
+        return this.transformManager.moveSelectedModelByDelta(deltaX, deltaZ);
+    }
+    
+    // 모델 회전 (위임)
+    rotateModel(modelId, angle) {
+        return this.transformManager.rotateModel(modelId, angle);
+    }
+    
+    // 모델 스케일 설정 (위임)
+    setModelScale(modelId, scale) {
+        return this.transformManager.setModelScale(modelId, scale);
+    }
+    
+    // 드래그 시작 (위임)
+    startDrag(raycaster, mouse) {
+        return this.dragManager.startDrag(raycaster, mouse);
+    }
+    
+    // 드래그 업데이트 (위임)
+    updateDrag(raycaster, mouse) {
+        return this.dragManager.updateDrag(raycaster, mouse);
+    }
+    
+    // 드래그 종료 (위임)
+    endDrag() {
+        return this.dragManager.endDrag();
+    }
+    
+    // 애니메이션 재생 (위임)
+    playAnimation(modelId, animIndex) {
+        return this.animationManager.playAnimation(modelId, animIndex);
+    }
+    
+    // 애니메이션 토글 (위임)
+    toggleAnimation(modelId, play) {
+        return this.animationManager.toggleAnimation(modelId, play);
     }
     
     // 재질 개선
@@ -694,23 +379,18 @@ export class ModelManager {
     
     // 애니메이션 업데이트 (메인 애니메이션 루프에서 호출)
     update(delta) {
-        // 애니메이션 믹서 업데이트
-        this.models.forEach(model => {
-            if (model.mixer) {
-                model.mixer.update(delta);
-            }
-        });
+        // 애니메이션 업데이트 위임
+        this.animationManager.update(delta);
         
-        // 선택 박스 업데이트
-        if (this.selectionBox.visible) {
-            this.selectionBox.update();
-        }
+        // 선택 상자 업데이트
+        this.selectionManager.update();
     }
     
     // 이동 제약 조건 설정
     setMoveConstraints(constraints) {
         if (constraints) {
             Object.assign(this.moveConstraints, constraints);
+            this.transformManager.setMoveConstraints(constraints);
         }
     }
     
@@ -720,5 +400,6 @@ export class ModelManager {
         if (gridSize > 0) {
             this.moveConstraints.gridSize = gridSize;
         }
+        this.transformManager.setMoveConstraints(this.moveConstraints);
     }
 }
