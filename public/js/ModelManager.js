@@ -420,7 +420,7 @@ export class ModelManager {
     }
 
     /**
-     * 모델 꼭지점 거리 표시
+     * 모델 꼭지점 거리 표시 (수평 거리만 표시)
      * @param {number} modelId - 모델 ID
      */
     showModelVertexDistances(modelId) {
@@ -437,54 +437,107 @@ export class ModelManager {
         // 바닥면 치수 가져오기
         const floorDimensions = this.floorManager.getDimensions();
         
-        // 바닥면 모서리 좌표
+        // 바닥면 모서리 정의 (더 자세한 설명과 함께)
         const floorEdges = [
-            new THREE.Vector3(0, 0, 0), // 좌측 상단
-            new THREE.Vector3(floorDimensions.width, 0, 0), // 우측 상단
-            new THREE.Vector3(0, 0, floorDimensions.depth), // 좌측 하단
-            new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth) // 우측 하단
+            {
+                start: new THREE.Vector3(0, 0, 0),
+                end: new THREE.Vector3(floorDimensions.width, 0, 0),
+                description: "상단 경계선"
+            },
+            {
+                start: new THREE.Vector3(0, 0, floorDimensions.depth),
+                end: new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth),
+                description: "하단 경계선"
+            },
+            {
+                start: new THREE.Vector3(0, 0, 0),
+                end: new THREE.Vector3(0, 0, floorDimensions.depth),
+                description: "좌측 경계선"
+            },
+            {
+                start: new THREE.Vector3(floorDimensions.width, 0, 0),
+                end: new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth),
+                description: "우측 경계선"
+            }
         ];
+        
+        console.log("바닥면 치수:", floorDimensions);
         
         // 모델의 바운딩 박스 계산
         const boundingBox = new THREE.Box3().setFromObject(model.root);
+        console.log("모델 바운딩 박스:", {min: boundingBox.min, max: boundingBox.max});
         
-        // 바운딩 박스의 8개 꼭지점 좌표 구하기
-        const corners = [
-            new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.min.z),
-            new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.max.z),
-            new THREE.Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.min.z),
-            new THREE.Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.max.z),
-            new THREE.Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.min.z),
-            new THREE.Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.max.z),
-            new THREE.Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.min.z),
-            new THREE.Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.max.z)
+        // 모델의 바닥 부분 모서리 좌표 (y=0 높이에서의 모서리)
+        const modelBottomCorners = [
+            {pos: new THREE.Vector3(boundingBox.min.x, 0, boundingBox.min.z), desc: "좌측 상단"},
+            {pos: new THREE.Vector3(boundingBox.min.x, 0, boundingBox.max.z), desc: "좌측 하단"},
+            {pos: new THREE.Vector3(boundingBox.max.x, 0, boundingBox.min.z), desc: "우측 상단"},
+            {pos: new THREE.Vector3(boundingBox.max.x, 0, boundingBox.max.z), desc: "우측 하단"}
         ];
         
-        // 바닥에 있는 꼭지점은 제외 (y값이 거의 0인 경우)
-        const nonFloorCorners = corners.filter(corner => corner.y > 0.05);
+        console.log("모델 바닥 모서리 좌표:", modelBottomCorners.map(c => c.desc));
         
-        // 각 꼭지점에 대해 수직 거리 화살표 생성
-        for (const corner of nonFloorCorners) {
-            // 꼭지점에서 바닥까지의 수직선에 해당하는 바닥 위치
-            const floorPoint = new THREE.Vector3(corner.x, 0, corner.z);
+        // 각 모델 바닥 모서리에 대해 가장 가까운 바닥면 모서리와의 최단 거리 계산
+        for (const modelCorner of modelBottomCorners) {
+            // 각 모서리별 최단 거리 저장
+            let shortestDistance = Infinity;
+            let closestEdge = null;
+            let closestPoint = null;
             
-            // 화살표 생성 (FloorManager의 화살표 생성 함수 활용)
-            this.floorManager.createVertexDistanceArrows(corner, floorPoint, this.vertexDistanceGroup, 0xFF0000);
-            
-            // 가장 가까운 바닥 모서리 찾기
-            let closestEdge = floorEdges[0];
-            let minDistance = corner.distanceTo(closestEdge);
-            
-            for (let i = 1; i < floorEdges.length; i++) {
-                const distance = corner.distanceTo(floorEdges[i]);
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closestEdge = floorEdges[i];
+            // 모델 모서리에서 각 바닥면 모서리까지의 최단 거리 계산
+            for (const edge of floorEdges) {
+                const edgeStart = edge.start;
+                const edgeEnd = edge.end;
+                
+                // 모서리 선분의 방향 벡터 계산
+                const edgeVector = new THREE.Vector3().subVectors(edgeEnd, edgeStart);
+                const edgeLength = edgeVector.length();
+                const edgeDir = edgeVector.clone().normalize();
+                
+                // 모델 모서리에서 바닥면 모서리 시작점까지의 벡터
+                const cornerToEdgeStart = new THREE.Vector3().subVectors(modelCorner.pos, edgeStart);
+                
+                // 이 벡터를 모서리 방향으로 투영
+                const projection = cornerToEdgeStart.dot(edgeDir);
+                
+                // 투영된 지점 계산
+                let projectedPoint;
+                
+                if (projection <= 0) {
+                    // 투영이 선분 시작점 이전이면 시작점이 최단 거리
+                    projectedPoint = edgeStart.clone();
+                } else if (projection >= edgeLength) {
+                    // 투영이 선분 끝점 이후이면 끝점이 최단 거리
+                    projectedPoint = edgeEnd.clone();
+                } else {
+                    // 투영된 지점이 선분 위에 있는 경우
+                    projectedPoint = edgeStart.clone().add(edgeDir.clone().multiplyScalar(projection));
+                }
+                
+                // 모델 모서리와 투영된 지점 사이의 거리 계산
+                const distance = modelCorner.pos.distanceTo(projectedPoint);
+                
+                // 최단 거리 업데이트
+                if (distance < shortestDistance) {
+                    shortestDistance = distance;
+                    closestEdge = edge;
+                    closestPoint = projectedPoint;
                 }
             }
             
-            // 꼭지점과 가장 가까운 바닥 모서리 사이의 화살표 생성
-            this.floorManager.createVertexDistanceArrows(corner, closestEdge, this.vertexDistanceGroup, 0x00AAFF);
+            // 최단 거리가 있으면 화살표 표시
+            if (closestPoint && shortestDistance > 0.1) {
+                console.log(`${modelCorner.desc} 모서리에서 ${closestEdge.description}까지 거리: ${shortestDistance.toFixed(2)}m`);
+                
+                // 거리 화살표 생성
+                this.floorManager.createDistanceArrow(
+                    modelCorner.pos,
+                    closestPoint,
+                    this.vertexDistanceGroup,
+                    0x00AAFF,
+                    `${modelCorner.desc}→${closestEdge.description}`
+                );
+            }
         }
     }
 

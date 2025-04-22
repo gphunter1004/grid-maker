@@ -329,34 +329,35 @@ export class FloorManager {
     }
     
     /**
-     * 꼭지점 거리 화살표 생성
-     * @param {THREE.Vector3} startPoint - 시작점 (꼭지점)
-     * @param {THREE.Vector3} endPoint - 끝점 (바닥점)
+     * 거리 화살표 생성 (수평 거리)
+     * @param {THREE.Vector3} startPoint - 시작점 (모델 모서리)
+     * @param {THREE.Vector3} endPoint - 끝점 (바닥 모서리에 투영된 점)
      * @param {THREE.Group} parentGroup - 부모 그룹
      * @param {number} arrowColor - 화살표 색상 (16진수)
+     * @param {string} description - 화살표 설명 (선택적)
      */
-    createVertexDistanceArrows(startPoint, endPoint, parentGroup, arrowColor = 0xFF0000) {
+    createDistanceArrow(startPoint, endPoint, parentGroup, arrowColor = 0x00AAFF, description = '') {
         // 두 점 사이의 거리 계산
         const distance = startPoint.distanceTo(endPoint);
         
-        // 방향 벡터 계산 - 바닥에서 꼭지점으로 향하게 변경
-        const direction = new THREE.Vector3().subVectors(startPoint, endPoint).normalize();
+        // 방향 벡터 계산
+        const direction = new THREE.Vector3().subVectors(endPoint, startPoint).normalize();
         
-        // 화살표 크기 증가
-        const headLength = 0.5;  // 고정된 더 큰 값
-        const headWidth = 0.3;   // 고정된 더 큰 값
+        // 화살표 크기
+        const headLength = Math.min(0.5, distance * 0.2);  // 거리에 비례하되 최대값 제한
+        const headWidth = headLength * 0.6;
         
-        // 시작점과 끝점을 바꿔서 화살표 생성 (바닥에서 위로 향하게)
+        // 화살표 생성 (모델 모서리에서 바닥 모서리 방향으로)
         const arrowHelper = new THREE.ArrowHelper(
             direction,
-            endPoint,  // 바닥점에서 시작
+            startPoint,
             distance,
             arrowColor,
             headLength,
             headWidth
         );
         
-        // 화살표 굵기 증가를 위한 라인 설정
+        // 화살표 굵기 증가
         if (arrowHelper.line) {
             arrowHelper.line.material.linewidth = 3;
         }
@@ -365,7 +366,7 @@ export class FloorManager {
         arrowHelper.renderOrder = 999;
         
         // 화살표에 모델 거리 정보라는 표시
-        arrowHelper.userData.type = 'vertexDistance';
+        arrowHelper.userData.type = 'horizontalDistance';
         
         // 부모 그룹에 추가
         parentGroup.add(arrowHelper);
@@ -373,26 +374,32 @@ export class FloorManager {
         // 거리 라벨 생성
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        canvas.width = 128;
-        canvas.height = 64;
+        canvas.width = 256;  // 더 넓은 캔버스 (설명 추가용)
+        canvas.height = 80;  // 더 높은 캔버스 (2줄 텍스트용)
         
         // 배경 그리기
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // 더 불투명하게
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
         // 테두리 그리기
-        ctx.strokeStyle = `#${arrowColor.toString(16).padStart(6, '0')}`; // 화살표 색상과 동일한 색상으로 테두리
+        ctx.strokeStyle = `#${arrowColor.toString(16).padStart(6, '0')}`;
         ctx.lineWidth = 4;
         ctx.strokeRect(0, 0, canvas.width, canvas.height);
         
-        // 텍스트 그리기
+        // 거리 텍스트 그리기
         ctx.font = 'bold 24px Arial';
         ctx.fillStyle = 'black';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(`${distance.toFixed(2)}m`, canvas.width/2, canvas.height/2);
+        ctx.fillText(`${distance.toFixed(2)}m`, canvas.width/2, canvas.height/3);
         
-        // 스프라이트 생성 (항상 카메라를 향하는 평면)
+        // 설명 텍스트가 있으면 추가
+        if (description) {
+            ctx.font = '14px Arial';
+            ctx.fillText(description, canvas.width/2, canvas.height*2/3);
+        }
+        
+        // 스프라이트 생성
         const spriteMap = new THREE.CanvasTexture(canvas);
         const spriteMaterial = new THREE.SpriteMaterial({ 
             map: spriteMap,
@@ -400,25 +407,22 @@ export class FloorManager {
         });
         
         const sprite = new THREE.Sprite(spriteMaterial);
-        // 스프라이트 크기 증가
-        sprite.scale.set(2, 1, 1);
+        sprite.scale.set(2.5, 1.25, 1);  // 비율에 맞게 스케일 조정
         
-        // 라벨 위치 - 화살표 중간 지점에 약간 오프셋
+        // 라벨 위치 - 화살표 중간 지점
         const midPoint = new THREE.Vector3().addVectors(startPoint, endPoint).multiplyScalar(0.5);
-        sprite.position.copy(midPoint);
         
-        // 약간 옆으로 이동 (지나치게 겹치지 않도록)
-        // 거리 라벨이 서로 겹치지 않도록 살짝 다른 위치에 배치
-        const offsetX = Math.random() * 0.6 + 0.2; // 0.2 ~ 0.8 사이의 랜덤 값
-        const offsetZ = Math.random() * 0.3 - 0.15; // -0.15 ~ 0.15 사이의 랜덤 값
-        sprite.position.x += offsetX;
-        sprite.position.z += offsetZ;
+        // y좌표를 약간 높임 (바닥면 위에 표시)
+        midPoint.y += 0.5;
+        
+        sprite.position.copy(midPoint);
         
         // 렌더링 순서 설정
         sprite.renderOrder = 1000;
         
         // 사용자 데이터 추가
-        sprite.userData.type = 'vertexDistance';
+        sprite.userData.type = 'horizontalDistance';
+        sprite.userData.description = description;
         
         // 부모 그룹에 추가
         parentGroup.add(sprite);
