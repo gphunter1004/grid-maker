@@ -192,7 +192,12 @@ export class CollisionManager {
      * @returns {boolean} - 이동 가능 여부 (충돌 없음)
      */
     checkMoveCollision(model, newPosition, previousPosition, constraints = {}) {
-        if (!this.enabled) return true;
+        // 충돌 감지 비활성화 상태에서는 충돌 체크를 하지 않고 이동 허용
+        if (!this.enabled) {
+            // 새 위치로 이동
+            model.root.position.copy(newPosition);
+            return true;
+        }
         
         // 이전 위치 저장
         const originalPosition = model.root.position.clone();

@@ -106,7 +106,10 @@ class App {
         
         // Initialize model manager
         this.modelManager = new ModelManager(this.scene, this.collisionManager);
-        
+ 
+        // FloorManager 참조 설정
+        this.modelManager.floorManager = this.floorManager;
+
         // 그리드 경계 설정
         this.setGridBoundaryToModels();
         
@@ -229,24 +232,30 @@ class App {
             });
         }
 
-        // 충돌 감지 토글 체크박스 이벤트 리스너 수정 (필요한 경우)
+        // 충돌 감지 토글 체크박스 이벤트 리스너
         const collisionToggle = document.getElementById('collision-toggle');
         if (collisionToggle) {
             collisionToggle.addEventListener('change', (event) => {
+                // 충돌 감지 활성화/비활성화 설정
                 this.modelManager.collisionManager.setEnabled(event.target.checked);
                 
-                // 충돌 감지 비활성화 시 이동 제약 설정도 업데이트
-                if (!event.target.checked) {
-                    this.modelManager.setMoveConstraints({
-                        allowCollisionMove: true, // 충돌 감지 비활성화 시 이동 항상 허용
-                        respectInitialCollision: false
-                    });
-                } else {
-                    this.modelManager.setMoveConstraints({
-                        allowCollisionMove: false, // 충돌 감지 활성화 시 이동 제한
-                        respectInitialCollision: true
-                    });
-                }
+                // 이동 제약 설정 업데이트
+                const moveConstraints = {
+                    allowCollisionMove: !event.target.checked, // 충돌 감지 비활성화 시 이동 항상 허용
+                    respectInitialCollision: event.target.checked,
+                    moveSpeed: 0.2,         // 키보드 이동 속도 유지
+                    gridSnap: this.modelManager.moveConstraints.gridSnap, // 현재 그리드 스냅 설정 유지
+                    gridSize: this.modelManager.moveConstraints.gridSize   // 현재 그리드 크기 설정 유지
+                };
+                
+                // 이동 제약 설정 적용
+                this.modelManager.setMoveConstraints(moveConstraints);
+                
+                // 상태 메시지 표시
+                const message = event.target.checked ? 
+                    "충돌 감지가 활성화되었습니다." : 
+                    "충돌 감지가 비활성화되었습니다. 모델을 자유롭게 이동할 수 있습니다.";
+                this.uiManager.showMessage(message);
             });
         }
     }
@@ -263,7 +272,7 @@ class App {
         
         // 선택된 모델이 있는 경우
         if (this.modelManager.getSelectedModelId() !== null) {
-            // 드래그 시작
+            // 마우스 커서가 선택된 모델 위에 있는 경우에만 드래그 시작
             if (this.modelManager.startDrag(this.raycaster, this.mouse)) {
                 this.inputState.isDragging = true;
                 

@@ -22,6 +22,12 @@ export class ModelManager {
         // 모델 그룹 이름
         this.groupName = 'models';
         
+        // 꼭지점 거리 표시 그룹
+        this.vertexDistanceGroup = new THREE.Group();
+        // 그룹을 항상 앞에 표시하도록 설정
+        this.vertexDistanceGroup.renderOrder = 999;
+        scene.add(this.vertexDistanceGroup);
+
         // 로더 초기화
         this.loader = new GLTFLoader();
         
@@ -304,6 +310,9 @@ export class ModelManager {
     
     // 선택 해제 (위임)
     clearSelection() {
+        // 모델 꼭지점 거리 표시 제거
+        this.hideModelVertexDistances();
+        
         return this.selectionManager.clearSelection();
     }
     
@@ -409,4 +418,98 @@ export class ModelManager {
         }
         this.transformManager.setMoveConstraints(this.moveConstraints);
     }
+
+    /**
+     * 모델 꼭지점 거리 표시
+     * @param {number} modelId - 모델 ID
+     */
+    showModelVertexDistances(modelId) {
+        // 기존 거리 표시 제거
+        this.hideModelVertexDistances();
+        
+        // 모델과 FloorManager 참조 확인
+        const model = this.getModel(modelId);
+        if (!model || !this.floorManager) {
+            console.error("모델 또는 floorManager가 없음");
+            return;
+        }
+        
+        // 바닥면 치수 가져오기
+        const floorDimensions = this.floorManager.getDimensions();
+        
+        // 바닥면 모서리 좌표
+        const floorEdges = [
+            new THREE.Vector3(0, 0, 0), // 좌측 상단
+            new THREE.Vector3(floorDimensions.width, 0, 0), // 우측 상단
+            new THREE.Vector3(0, 0, floorDimensions.depth), // 좌측 하단
+            new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth) // 우측 하단
+        ];
+        
+        // 모델의 바운딩 박스 계산
+        const boundingBox = new THREE.Box3().setFromObject(model.root);
+        
+        // 바운딩 박스의 8개 꼭지점 좌표 구하기
+        const corners = [
+            new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.min.z),
+            new THREE.Vector3(boundingBox.min.x, boundingBox.min.y, boundingBox.max.z),
+            new THREE.Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.min.z),
+            new THREE.Vector3(boundingBox.min.x, boundingBox.max.y, boundingBox.max.z),
+            new THREE.Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.min.z),
+            new THREE.Vector3(boundingBox.max.x, boundingBox.min.y, boundingBox.max.z),
+            new THREE.Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.min.z),
+            new THREE.Vector3(boundingBox.max.x, boundingBox.max.y, boundingBox.max.z)
+        ];
+        
+        // 바닥에 있는 꼭지점은 제외 (y값이 거의 0인 경우)
+        const nonFloorCorners = corners.filter(corner => corner.y > 0.05);
+        
+        // 각 꼭지점에 대해 수직 거리 화살표 생성
+        for (const corner of nonFloorCorners) {
+            // 꼭지점에서 바닥까지의 수직선에 해당하는 바닥 위치
+            const floorPoint = new THREE.Vector3(corner.x, 0, corner.z);
+            
+            // 화살표 생성 (FloorManager의 화살표 생성 함수 활용)
+            this.floorManager.createVertexDistanceArrows(corner, floorPoint, this.vertexDistanceGroup, 0xFF0000);
+            
+            // 가장 가까운 바닥 모서리 찾기
+            let closestEdge = floorEdges[0];
+            let minDistance = corner.distanceTo(closestEdge);
+            
+            for (let i = 1; i < floorEdges.length; i++) {
+                const distance = corner.distanceTo(floorEdges[i]);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestEdge = floorEdges[i];
+                }
+            }
+            
+            // 꼭지점과 가장 가까운 바닥 모서리 사이의 화살표 생성
+            this.floorManager.createVertexDistanceArrows(corner, closestEdge, this.vertexDistanceGroup, 0x00AAFF);
+        }
+    }
+
+    /**
+     * 모델 꼭지점 거리 표시 제거
+     */
+    hideModelVertexDistances() {
+        // 그룹 내 모든 객체 제거
+        while (this.vertexDistanceGroup.children.length > 0) {
+            const object = this.vertexDistanceGroup.children[0];
+            
+            // 매테리얼과 지오메트리 정리
+            if (object.material) {
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(material => material.dispose());
+                } else {
+                    object.material.dispose();
+                }
+            }
+            
+            if (object.geometry) {
+                object.geometry.dispose();
+            }
+            
+            this.vertexDistanceGroup.remove(object);
+        }
+    } 
 }

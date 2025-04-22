@@ -28,6 +28,10 @@ export class ModelDragManager {
         const model = this.modelManager.getModel(modelId);
         if (!model || !model.isDraggable) return false;
         
+        // 레이캐스터가 선택된 모델과 교차하는지 확인
+        const isHoveringSelectedModel = this.isRayIntersectingModel(raycaster, modelId);
+        if (!isHoveringSelectedModel) return false;
+        
         // 현재 모델 위치에서 드래그 평면 생성
         this.dragPlane.constant = -model.root.position.y;
         
@@ -43,6 +47,28 @@ export class ModelDragManager {
         }
         
         return false;
+    }
+    
+    /**
+     * 레이캐스터가 특정 모델과 교차하는지 확인
+     * @param {THREE.Raycaster} raycaster - 레이캐스터
+     * @param {number} modelId - 확인할 모델의 ID
+     * @returns {boolean} - 교차 여부
+     */
+    isRayIntersectingModel(raycaster, modelId) {
+        const model = this.modelManager.getModel(modelId);
+        if (!model) return false;
+        
+        // 모델의 선택 메시 및 모든 하위 메시를 대상으로 레이캐스트 확인
+        const targetObjects = [model.selectionMesh];
+        model.originalModel.traverse(node => {
+            if (node.isMesh) {
+                targetObjects.push(node);
+            }
+        });
+        
+        const intersects = raycaster.intersectObjects(targetObjects);
+        return intersects.length > 0;
     }
     
     /**

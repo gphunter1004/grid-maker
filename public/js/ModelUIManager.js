@@ -36,7 +36,7 @@ export class ModelUIManager {
     }
     
     initEventListeners() {
-        // 모델 파일 선택 시 모델 ID 자동 생성
+        // 모델 파일 선택 시 모델 ID 자동 생성 및 자동 로드
         if (this.modelFileInput) {
             this.modelFileInput.addEventListener('change', (event) => {
                 const file = event.target.files[0];
@@ -53,6 +53,9 @@ export class ModelUIManager {
                     this.modelRotYInput.value = 0;
                     this.modelRotZInput.value = 0;
                     this.modelScaleInput.value = 1.0;
+                    
+                    // 파일 선택 시 자동으로 모델 로드
+                    this.loadModelFromInput();
                 }
             });
         }

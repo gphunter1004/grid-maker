@@ -30,6 +30,11 @@ export class ModelSelectionManager {
         this.selectedObject = null;
         this.selectedModelId = null;
         this.selectionBox.visible = false;
+        
+        // 모델 선택이 변경될 때 이전 꼭지점 거리 표시 제거
+        if (this.modelManager.hideModelVertexDistances) {
+            this.modelManager.hideModelVertexDistances();
+        }
 
         // 새 모델 찾기
         const model = this.modelManager.getModel(modelId);
@@ -42,6 +47,18 @@ export class ModelSelectionManager {
         // 모델을 포함하는 경계 박스 표시
         this.selectionBox.setFromObject(model.root);
         this.selectionBox.visible = true;
+        
+        // 도면 모드인 경우 모델 꼭지점 거리 표시
+        if (this.modelManager.floorManager && 
+            this.modelManager.floorManager.config.blueprintMode) {
+            // 디버깅 메시지 추가
+            console.log("도면 모드 활성화됨 - 꼭지점 거리 표시 시작");
+            setTimeout(() => {
+                this.modelManager.showModelVertexDistances(modelId);
+            }, 100); // 약간의 지연을 두어 렌더링 이슈 방지
+        } else {
+            console.log("도면 모드 비활성화됨 또는 floorManager 참조 없음");
+        }
         
         // 콜백 호출
         if (this.onModelSelect) {
