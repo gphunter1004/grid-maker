@@ -101,6 +101,21 @@ export class UIManager {
             this.agvGridManager.createAGVGrid();
         }
         
+        // 도면 모드 상태가 변경되었을 때 현재 선택된 모델의 치수 화살표 업데이트
+        const modelManager = this.floorManager.sceneManager.scene.userData.modelManager;
+        if (modelManager) {
+            const selectedModelId = modelManager.getSelectedModelId();
+            if (selectedModelId !== null) {
+                if (enabled) {
+                    // 도면 모드 활성화 시 치수 화살표 표시
+                    modelManager.showModelVertexDistances(selectedModelId);
+                } else {
+                    // 도면 모드 비활성화 시 치수 화살표 제거
+                    modelManager.hideModelVertexDistances();
+                }
+            }
+        }
+        
         // 도면 모드일 때는 상세한 그리드 정보를 표시
         if (enabled) {
             this.showMessage("도면 모드가 활성화되었습니다. 치수 정보가 표시됩니다.");

@@ -95,18 +95,41 @@ export class ModelDragManager {
             // 모델 위치 업데이트 (TransformManager에게 위임)
             const success = this.modelManager.updateModelXZPosition(model.id, newPosition.x, newPosition.z);
             
+            // 도면 모드에서 드래그 성공 시 치수 화살표 업데이트
+            if (success && 
+                this.modelManager.floorManager && 
+                this.modelManager.floorManager.config.blueprintMode) {
+                
+                // 효율성을 위해 10프레임마다 한 번 업데이트
+                const now = Date.now();
+                if (!this.lastArrowUpdate || now - this.lastArrowUpdate > 100) {
+                    this.modelManager.showModelVertexDistances(modelId);
+                    this.lastArrowUpdate = now;
+                }
+            }
+            
             return success;
         }
         
         return false;
     }
-    
+
     /**
      * 드래그 종료
      * @returns {boolean} - 성공 여부
      */
     endDrag() {
         this.isDragging = false;
+        
+        // 드래그 종료 시 도면 모드에서 최종 화살표 업데이트
+        if (this.modelManager.floorManager && 
+            this.modelManager.floorManager.config.blueprintMode &&
+            this.modelManager.getSelectedModelId() !== null) {
+            
+            const modelId = this.modelManager.getSelectedModelId();
+            this.modelManager.showModelVertexDistances(modelId);
+        }
+        
         return true;
     }
     

@@ -224,6 +224,15 @@ export class ModelTransformManager {
             return false;
         }
         
+        // 도면 모드인 경우 모델 치수 표시 업데이트
+        if (this.modelManager.floorManager && 
+            this.modelManager.floorManager.config.blueprintMode) {
+            // 약간의 지연 후 화살표 업데이트 (렌더링 문제 방지)
+            setTimeout(() => {
+                this.modelManager.showModelVertexDistances(modelId);
+            }, 10);
+        }
+        
         return true;
     }
     

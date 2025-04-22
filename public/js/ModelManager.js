@@ -420,7 +420,7 @@ export class ModelManager {
     }
 
     /**
-     * 모델 꼭지점 거리 표시 (수평 거리만 표시)
+     * 모델 치수 및 경계 거리 표시 (모델과 겹치지 않게 표시)
      * @param {number} modelId - 모델 ID
      */
     showModelVertexDistances(modelId) {
@@ -437,108 +437,303 @@ export class ModelManager {
         // 바닥면 치수 가져오기
         const floorDimensions = this.floorManager.getDimensions();
         
-        // 바닥면 모서리 정의 (더 자세한 설명과 함께)
-        const floorEdges = [
-            {
-                start: new THREE.Vector3(0, 0, 0),
-                end: new THREE.Vector3(floorDimensions.width, 0, 0),
-                description: "상단 경계선"
-            },
-            {
-                start: new THREE.Vector3(0, 0, floorDimensions.depth),
-                end: new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth),
-                description: "하단 경계선"
-            },
-            {
-                start: new THREE.Vector3(0, 0, 0),
-                end: new THREE.Vector3(0, 0, floorDimensions.depth),
-                description: "좌측 경계선"
-            },
-            {
-                start: new THREE.Vector3(floorDimensions.width, 0, 0),
-                end: new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth),
-                description: "우측 경계선"
-            }
-        ];
-        
-        console.log("바닥면 치수:", floorDimensions);
-        
         // 모델의 바운딩 박스 계산
         const boundingBox = new THREE.Box3().setFromObject(model.root);
-        console.log("모델 바운딩 박스:", {min: boundingBox.min, max: boundingBox.max});
         
-        // 모델의 바닥 부분 모서리 좌표 (y=0 높이에서의 모서리)
-        const modelBottomCorners = [
-            {pos: new THREE.Vector3(boundingBox.min.x, 0, boundingBox.min.z), desc: "좌측 상단"},
-            {pos: new THREE.Vector3(boundingBox.min.x, 0, boundingBox.max.z), desc: "좌측 하단"},
-            {pos: new THREE.Vector3(boundingBox.max.x, 0, boundingBox.min.z), desc: "우측 상단"},
-            {pos: new THREE.Vector3(boundingBox.max.x, 0, boundingBox.max.z), desc: "우측 하단"}
+        // 모델의 크기 계산
+        const size = new THREE.Vector3();
+        boundingBox.getSize(size);
+        
+        // 모델의 회전 각도 가져오기
+        const rotation = model.root.rotation.y;
+        
+        // 회전 행렬 생성
+        const rotMatrix = new THREE.Matrix4().makeRotationY(rotation);
+        
+        // 바운딩 박스의 중심점 계산
+        const center = new THREE.Vector3();
+        boundingBox.getCenter(center);
+        center.y = 0; // y좌표는 바닥 높이로 설정
+        
+        // 모델 크기의 절반 (각 방향으로)
+        const halfWidth = size.x / 2;
+        const halfDepth = size.z / 2;
+        
+        // 회전을 고려한 모델 모서리 계산
+        const topLeftOffset = new THREE.Vector3(-halfWidth, 0, -halfDepth).applyMatrix4(rotMatrix);
+        const topRightOffset = new THREE.Vector3(halfWidth, 0, -halfDepth).applyMatrix4(rotMatrix);
+        const bottomLeftOffset = new THREE.Vector3(-halfWidth, 0, halfDepth).applyMatrix4(rotMatrix);
+        const bottomRightOffset = new THREE.Vector3(halfWidth, 0, halfDepth).applyMatrix4(rotMatrix);
+        
+        // 월드 좌표계에서의 모서리 위치
+        const corners = {
+            topLeft: {
+                pos: new THREE.Vector3().addVectors(center, topLeftOffset),
+                desc: "좌측 상단"
+            },
+            topRight: {
+                pos: new THREE.Vector3().addVectors(center, topRightOffset),
+                desc: "우측 상단"
+            },
+            bottomLeft: {
+                pos: new THREE.Vector3().addVectors(center, bottomLeftOffset),
+                desc: "좌측 하단"
+            },
+            bottomRight: {
+                pos: new THREE.Vector3().addVectors(center, bottomRightOffset),
+                desc: "우측 하단"
+            }
+        };
+        
+        // 모서리 위치를 조금 올려서 바닥면과 겹치지 않도록 함
+        for (const key in corners) {
+            corners[key].pos.y += 0.05;
+        }
+        
+        // 바닥면 경계선 정의
+        const edges = {
+            top: {
+                start: new THREE.Vector3(0, 0, 0),
+                end: new THREE.Vector3(floorDimensions.width, 0, 0),
+                description: "상단 경계선",
+                color: 0xFF2222 // 빨간색
+            },
+            bottom: {
+                start: new THREE.Vector3(0, 0, floorDimensions.depth),
+                end: new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth),
+                description: "하단 경계선",
+                color: 0xFF9900 // 주황색
+            },
+            left: {
+                start: new THREE.Vector3(0, 0, 0),
+                end: new THREE.Vector3(0, 0, floorDimensions.depth),
+                description: "좌측 경계선",
+                color: 0x22FF22 // 녹색
+            },
+            right: {
+                start: new THREE.Vector3(floorDimensions.width, 0, 0),
+                end: new THREE.Vector3(floorDimensions.width, 0, floorDimensions.depth),
+                description: "우측 경계선", 
+                color: 0x2288FF // 파란색
+            }
+        };
+        
+        // 1. 모델 치수 화살표 생성 (윗부분, 왼쪽부분) - 모델과 겹치지 않도록 떨어뜨려 표시
+        
+        // 화살표를 모델에서 얼마나 떨어뜨릴지 설정
+        const arrowOffset = 0.5; // 미터 단위
+        
+        // 윗부분(너비) 화살표의 위치 계산 - 모델 위쪽으로 이동
+        const topStart = corners.topLeft.pos.clone();
+        const topEnd = corners.topRight.pos.clone();
+        
+        // 화살표의 방향 벡터 계산 (왼쪽->오른쪽)
+        const topDir = new THREE.Vector3().subVectors(topEnd, topStart).normalize();
+        // 방향 벡터를 90도 회전하여 위쪽으로 향하게 함
+        const topOffsetDir = new THREE.Vector3(-topDir.z, 0, -topDir.x);
+        
+        // 시작점과 끝점을 위쪽으로 이동
+        topStart.add(topOffsetDir.clone().multiplyScalar(arrowOffset));
+        topEnd.add(topOffsetDir.clone().multiplyScalar(arrowOffset));
+        
+        // 윗부분(너비) 치수 화살표 생성
+        this.createDimensionArrow(
+            topStart,
+            topEnd,
+            this.vertexDistanceGroup,
+            0xFF2222, // 빨간색
+            `${size.x.toFixed(2)}m`, // 너비 표시
+            "width",
+            0.3 // 라벨 y 오프셋
+        );
+        
+        // 왼쪽부분(깊이) 화살표의 위치 계산 - 모델 왼쪽으로 이동
+        const leftStart = corners.topLeft.pos.clone();
+        const leftEnd = corners.bottomLeft.pos.clone();
+        
+        // 화살표의 방향 벡터 계산 (위->아래)
+        const leftDir = new THREE.Vector3().subVectors(leftEnd, leftStart).normalize();
+        // 방향 벡터를 90도 회전하여 왼쪽으로 향하게 함
+        const leftOffsetDir = new THREE.Vector3(-leftDir.z, 0, leftDir.x);
+        
+        // 시작점과 끝점을 왼쪽으로 이동
+        leftStart.add(leftOffsetDir.clone().multiplyScalar(arrowOffset));
+        leftEnd.add(leftOffsetDir.clone().multiplyScalar(arrowOffset));
+        
+        // 왼쪽부분(깊이) 치수 화살표 생성
+        this.createDimensionArrow(
+            leftStart,
+            leftEnd,
+            this.vertexDistanceGroup,
+            0x22FF22, // 녹색
+            `${size.z.toFixed(2)}m`, // 깊이 표시
+            "depth",
+            0.3 // 라벨 y 오프셋
+        );
+        
+        // 2. 모델 모서리에서 바닥면 경계까지의 거리 화살표 생성
+        
+        // 특정 꼭지점과 경계선 연결 정의
+        const connections = [
+            // 우측 상단 꼭지점
+            { corner: corners.topRight, edge: edges.top, key: "우측 상단 > 상단 경계선" },
+            { corner: corners.topRight, edge: edges.right, key: "우측 상단 > 우측 경계선" },
+            
+            // 좌측 상단 꼭지점
+            { corner: corners.topLeft, edge: edges.top, key: "좌측 상단 > 상단 경계선" },
+            { corner: corners.topLeft, edge: edges.left, key: "좌측 상단 > 좌측 경계선" },
+            
+            // 우측 하단 꼭지점
+            { corner: corners.bottomRight, edge: edges.bottom, key: "우측 하단 > 하단 경계선" },
+            { corner: corners.bottomRight, edge: edges.right, key: "우측 하단 > 우측 경계선" },
+            
+            // 좌측 하단 꼭지점
+            { corner: corners.bottomLeft, edge: edges.bottom, key: "좌측 하단 > 하단 경계선" },
+            { corner: corners.bottomLeft, edge: edges.left, key: "좌측 하단 > 좌측 경계선" }
         ];
         
-        console.log("모델 바닥 모서리 좌표:", modelBottomCorners.map(c => c.desc));
-        
-        // 각 모델 바닥 모서리에 대해 가장 가까운 바닥면 모서리와의 최단 거리 계산
-        for (const modelCorner of modelBottomCorners) {
-            // 각 모서리별 최단 거리 저장
-            let shortestDistance = Infinity;
-            let closestEdge = null;
-            let closestPoint = null;
+        // 각 연결에 대해 투영된 점 찾고 화살표 생성
+        for (const connection of connections) {
+            const corner = connection.corner;
+            const edge = connection.edge;
+            const key = connection.key;
             
-            // 모델 모서리에서 각 바닥면 모서리까지의 최단 거리 계산
-            for (const edge of floorEdges) {
-                const edgeStart = edge.start;
-                const edgeEnd = edge.end;
-                
-                // 모서리 선분의 방향 벡터 계산
-                const edgeVector = new THREE.Vector3().subVectors(edgeEnd, edgeStart);
-                const edgeLength = edgeVector.length();
-                const edgeDir = edgeVector.clone().normalize();
-                
-                // 모델 모서리에서 바닥면 모서리 시작점까지의 벡터
-                const cornerToEdgeStart = new THREE.Vector3().subVectors(modelCorner.pos, edgeStart);
-                
-                // 이 벡터를 모서리 방향으로 투영
-                const projection = cornerToEdgeStart.dot(edgeDir);
-                
-                // 투영된 지점 계산
-                let projectedPoint;
-                
-                if (projection <= 0) {
-                    // 투영이 선분 시작점 이전이면 시작점이 최단 거리
-                    projectedPoint = edgeStart.clone();
-                } else if (projection >= edgeLength) {
-                    // 투영이 선분 끝점 이후이면 끝점이 최단 거리
-                    projectedPoint = edgeEnd.clone();
-                } else {
-                    // 투영된 지점이 선분 위에 있는 경우
-                    projectedPoint = edgeStart.clone().add(edgeDir.clone().multiplyScalar(projection));
-                }
-                
-                // 모델 모서리와 투영된 지점 사이의 거리 계산
-                const distance = modelCorner.pos.distanceTo(projectedPoint);
-                
-                // 최단 거리 업데이트
-                if (distance < shortestDistance) {
-                    shortestDistance = distance;
-                    closestEdge = edge;
-                    closestPoint = projectedPoint;
-                }
-            }
+            // 투영점 계산
+            let projectedPoint;
             
-            // 최단 거리가 있으면 화살표 표시
-            if (closestPoint && shortestDistance > 0.1) {
-                console.log(`${modelCorner.desc} 모서리에서 ${closestEdge.description}까지 거리: ${shortestDistance.toFixed(2)}m`);
-                
-                // 거리 화살표 생성
-                this.floorManager.createDistanceArrow(
-                    modelCorner.pos,
-                    closestPoint,
-                    this.vertexDistanceGroup,
-                    0x00AAFF,
-                    `${modelCorner.desc}→${closestEdge.description}`
+            // 상하단 경계선인 경우 (Z 좌표만 변경)
+            if (edge === edges.top || edge === edges.bottom) {
+                projectedPoint = new THREE.Vector3(
+                    corner.pos.x,   // X 좌표는 그대로
+                    0,              // Y 좌표는 0
+                    edge.start.z    // Z 좌표는 경계선의 Z 좌표
                 );
             }
+            // 좌우측 경계선인 경우 (X 좌표만 변경)
+            else {
+                projectedPoint = new THREE.Vector3(
+                    edge.start.x,   // X 좌표는 경계선의 X 좌표
+                    0,              // Y 좌표는 0
+                    corner.pos.z    // Z 좌표는 그대로
+                );
+            }
+            
+            // 거리 계산
+            const distance = new THREE.Vector2(corner.pos.x, corner.pos.z)
+                .distanceTo(new THREE.Vector2(projectedPoint.x, projectedPoint.z));
+            
+            // 화살표 생성
+            this.floorManager.createDistanceArrow(
+                corner.pos.clone(),
+                projectedPoint,
+                this.vertexDistanceGroup,
+                edge.color,
+                `${key}: ${distance.toFixed(2)}m`
+            );
         }
+        
+        console.log("모델 치수 및 경계 거리 화살표 생성 완료");
+    }
+
+    /**
+     * 치수 화살표 생성 - 모델과 겹치지 않게 표시
+     * @param {THREE.Vector3} start - 시작점
+     * @param {THREE.Vector3} end - 끝점
+     * @param {THREE.Group} group - 부모 그룹
+     * @param {number} color - 화살표 색상
+     * @param {string} label - 치수 라벨
+     * @param {string} direction - 방향 ('width' 또는 'depth')
+     * @param {number} labelYOffset - 라벨의 Y축 오프셋
+     */
+    createDimensionArrow(start, end, group, color, label, direction, labelYOffset = 0.2) {
+        // 두 점 사이의 방향 벡터
+        const dirVector = new THREE.Vector3().subVectors(end, start);
+        
+        // 선 길이
+        const length = dirVector.length();
+        
+        // 양방향 화살표를 위한 지오메트리와 머티리얼
+        const arrowHeadSize = 0.2; // 화살표 머리 크기
+        
+        // 시작점과 끝점 사이의 선 생성
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints([start, end]);
+        const lineMaterial = new THREE.LineBasicMaterial({ color: color, linewidth: 3 });
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        
+        // 화살표 머리를 위한 방향 벡터 정규화
+        const normalizedDir = dirVector.clone().normalize();
+        
+        // 시작점에서의 화살표 머리
+        const startArrowDir = normalizedDir.clone().negate(); // 반대 방향
+        const startArrowHelper = new THREE.ArrowHelper(
+            startArrowDir,
+            start.clone().addScaledVector(normalizedDir, arrowHeadSize), // 약간 시작점에서 떨어진 위치
+            arrowHeadSize,
+            color,
+            arrowHeadSize * 0.8,
+            arrowHeadSize * 0.5
+        );
+        
+        // 끝점에서의 화살표 머리
+        const endArrowHelper = new THREE.ArrowHelper(
+            normalizedDir,
+            end.clone().addScaledVector(normalizedDir, -arrowHeadSize), // 약간 끝점에서 떨어진 위치
+            arrowHeadSize,
+            color,
+            arrowHeadSize * 0.8,
+            arrowHeadSize * 0.5
+        );
+        
+        // 라벨 위치 계산 (중간점 위에)
+        const midPoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+        
+        // 라벨이 항상 위를 향하도록 offset 지정
+        midPoint.y += labelYOffset;
+        
+        // 치수 텍스트 라벨 생성
+        const labelCanvas = document.createElement('canvas');
+        const ctx = labelCanvas.getContext('2d');
+        labelCanvas.width = 128;
+        labelCanvas.height = 64;
+        
+        // 라벨 배경
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
+        
+        // 라벨 테두리
+        ctx.strokeStyle = `#${color.toString(16).padStart(6, '0')}`;
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, labelCanvas.width, labelCanvas.height);
+        
+        // 라벨 텍스트
+        ctx.font = 'bold 24px Arial';
+        ctx.fillStyle = 'black';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, labelCanvas.width/2, labelCanvas.height/2);
+        
+        // 스프라이트 생성
+        const labelTexture = new THREE.CanvasTexture(labelCanvas);
+        const labelMaterial = new THREE.SpriteMaterial({
+            map: labelTexture,
+            transparent: true
+        });
+        
+        const labelSprite = new THREE.Sprite(labelMaterial);
+        labelSprite.position.copy(midPoint);
+        labelSprite.scale.set(1.2, 0.6, 1);
+        
+        // 렌더링 순서 설정
+        line.renderOrder = 998;
+        startArrowHelper.renderOrder = 999;
+        endArrowHelper.renderOrder = 999;
+        labelSprite.renderOrder = 1000;
+        
+        // 부모 그룹에 추가
+        group.add(line);
+        group.add(startArrowHelper);
+        group.add(endArrowHelper);
+        group.add(labelSprite);
     }
 
     /**

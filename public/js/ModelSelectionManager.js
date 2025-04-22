@@ -51,13 +51,10 @@ export class ModelSelectionManager {
         // 도면 모드인 경우 모델 꼭지점 거리 표시
         if (this.modelManager.floorManager && 
             this.modelManager.floorManager.config.blueprintMode) {
-            // 디버깅 메시지 추가
-            console.log("도면 모드 활성화됨 - 꼭지점 거리 표시 시작");
+            // 약간의 지연을 두어 렌더링 이슈 방지
             setTimeout(() => {
                 this.modelManager.showModelVertexDistances(modelId);
-            }, 100); // 약간의 지연을 두어 렌더링 이슈 방지
-        } else {
-            console.log("도면 모드 비활성화됨 또는 floorManager 참조 없음");
+            }, 10);
         }
         
         // 콜백 호출
@@ -67,12 +64,17 @@ export class ModelSelectionManager {
         
         return true;
     }
-    
+
     /**
      * 선택 해제
      * @returns {boolean} - 성공 여부
      */
     clearSelection() {
+        // 선택 해제 시 치수 표시 제거
+        if (this.modelManager.hideModelVertexDistances) {
+            this.modelManager.hideModelVertexDistances();
+        }
+        
         this.selectedObject = null;
         this.selectedModelId = null;
         this.selectionBox.visible = false;
@@ -84,7 +86,7 @@ export class ModelSelectionManager {
         
         return true;
     }
-    
+        
     /**
      * 선택된 모델 ID 가져오기
      * @returns {number|null} - 선택된 모델 ID 또는 null

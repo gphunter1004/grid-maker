@@ -347,25 +347,27 @@ class App {
                 ? this.floorManager.config.scale // 시프트 키가 눌리면 1픽셀 단위로 이동
                 : this.modelManager.moveConstraints.moveSpeed;
             
+            let moved = false;
+            
             switch (event.key) {
                 case 'ArrowLeft':
-                    this.modelManager.moveSelectedModelByDelta(-moveSpeed, 0);
+                    moved = this.modelManager.moveSelectedModelByDelta(-moveSpeed, 0);
                     event.preventDefault();
                     break;
                 case 'ArrowRight':
-                    this.modelManager.moveSelectedModelByDelta(moveSpeed, 0);
+                    moved = this.modelManager.moveSelectedModelByDelta(moveSpeed, 0);
                     event.preventDefault();
                     break;
                 case 'ArrowUp':
-                    this.modelManager.moveSelectedModelByDelta(0, -moveSpeed);
+                    moved = this.modelManager.moveSelectedModelByDelta(0, -moveSpeed);
                     event.preventDefault();
                     break;
                 case 'ArrowDown':
-                    this.modelManager.moveSelectedModelByDelta(0, moveSpeed);
+                    moved = this.modelManager.moveSelectedModelByDelta(0, moveSpeed);
                     event.preventDefault();
                     break;
                 case ' ': // 스페이스바 - 회전
-                    this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
+                    moved = this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
                     event.preventDefault();
                     break;
                 case 'Delete':
@@ -389,17 +391,26 @@ class App {
             if (this.inputState.isControlPressed) {
                 switch (event.key) {
                     case 'ArrowLeft':
-                        this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), -15);
+                        moved = this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), -15);
                         event.preventDefault();
                         break;
                     case 'ArrowRight':
-                        this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
+                        moved = this.modelManager.rotateModel(this.modelManager.getSelectedModelId(), 15);
                         event.preventDefault();
                         break;
                 }
             }
+            
+            // 도면 모드에서 모델이 이동했으면 치수 화살표 업데이트
+            if (moved && 
+                this.modelManager.getSelectedModelId() !== null && 
+                this.floorManager.config.blueprintMode) {
+                // 이미 선택된 모델이므로 showModelVertexDistances 호출
+                const modelId = this.modelManager.getSelectedModelId();
+                this.modelManager.showModelVertexDistances(modelId);
+            }
         }
-    }
+    }   
     
     // 키보드 업 핸들러
     onKeyUp(event) {
