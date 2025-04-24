@@ -82,18 +82,52 @@ export class ModelManager {
                 const boxSize = boundingBox.getSize(new THREE.Vector3());
                 const boxCenter = boundingBox.getCenter(new THREE.Vector3());
                 
+                console.log('원본 바운딩 박스:', {
+                    min: boundingBox.min.toArray(),
+                    max: boundingBox.max.toArray(),
+                    size: boxSize.toArray(),
+                    center: boxCenter.toArray()
+                });
+                
+                // 모델을 그룹에 추가하기 전에 위치 조정
+                // 중요: y값을 0으로 맞추고, 모델의 가장 아랫면(boundingBox.min.y)이 
+                // 바닥 그리드(y=0) 바로 위에 오도록 설정
+                
+                // 모델의 중심점(x,z)은 그대로 0,0에 위치시키고,
+                // y값만 특별히 처리: 바닥 = 0에 모델의 하단이 위치하도록 조정
+                gltf.scene.position.set(
+                    -boxCenter.x,
+                    -boundingBox.min.y, // 이 부분이 핵심: 모델의 아랫면이 y=0에 위치하도록 함
+                    -boxCenter.z
+                );
+                
+                // 위치 조정 후 바운딩 박스 다시 계산
+                boundingBox.setFromObject(gltf.scene);
+                boxSize.copy(boundingBox.getSize(new THREE.Vector3()));
+                boxCenter.copy(boundingBox.getCenter(new THREE.Vector3()));
+                
+                console.log('위치 조정 후 바운딩 박스:', {
+                    min: boundingBox.min.toArray(),
+                    max: boundingBox.max.toArray(),
+                    size: boxSize.toArray(),
+                    center: boxCenter.toArray()
+                });
+                
                 // 바운딩 박스보다 약간 큰 투명한 선택용 메시 생성
                 const selectionGeometry = new THREE.BoxGeometry(
-                    boxSize.x * 1.05, 
-                    boxSize.y * 1.05, 
-                    boxSize.z * 1.05
+                    boxSize.x * 1.00, 
+                    boxSize.y * 1.00, 
+                    boxSize.z * 1.00
                 );
                 const selectionMaterial = new THREE.MeshBasicMaterial({
                     transparent: true,
-                    opacity: 0.1, // 약간 보이게 설정 (디버깅용)
+                    opacity: 0.1, // 약간 보이게 설정
                     depthWrite: false
                 });
                 const selectionMesh = new THREE.Mesh(selectionGeometry, selectionMaterial);
+                
+                // 선택용 메시의 위치를 바운딩 박스 중심으로 설정
+                selectionMesh.position.copy(boxCenter);
                 
                 // 선택용 메시에 모델 ID 할당
                 selectionMesh.userData.modelId = modelId;
@@ -103,11 +137,9 @@ export class ModelManager {
                 const modelRoot = new THREE.Group();
                 modelRoot.name = `model-${modelId}`;
                 
-                // 모델 씬의 위치를 조정 (바운딩 박스 중심을 원점으로)
-                gltf.scene.position.sub(boxCenter);
-                
                 // 충돌 감지용 메시 생성 및 추가
                 const collisionMesh = this.collisionManager.createCollisionDebugMesh({ id: modelId }, boundingBox);
+                collisionMesh.position.copy(boxCenter);
                 
                 // 씬과 선택용 메시, 충돌 메시를 그룹에 추가
                 modelRoot.add(gltf.scene);
@@ -162,7 +194,7 @@ export class ModelManager {
                 // 초기 위치 설정 (그리드 영역 내로 제한)
                 let initialPosition = new THREE.Vector3(
                     (Math.random() - 0.5) * 10,
-                    0,
+                    0, // y는 항상 0으로 설정 (바닥에 위치)
                     (Math.random() - 0.5) * 10
                 );
                 

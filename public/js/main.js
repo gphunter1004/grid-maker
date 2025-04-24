@@ -496,8 +496,8 @@ class App {
             this.camera = new THREE.PerspectiveCamera(
                 60, // FOV
                 aspect,
-                0.1,
-                1000
+                0.01, // near
+                2000  // far
             );
             
             // 카메라 위치 설정 - 비스듬히 내려다보는 시점
@@ -547,8 +547,8 @@ class App {
                 frustumSize * aspect / 2,  // right
                 frustumSize / 2,           // top
                 frustumSize / -2,          // bottom
-                0.1,                        // near
-                1000                        // far
+                0.01,                       // near
+                2000                        // far
             );
             
             // 카메라 위치 설정 - 수직으로 내려다보는 시점
